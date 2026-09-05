@@ -55,6 +55,8 @@ export const collections = pgTable("collections", {
   errorMessage: text("error_message"),
   validated: boolean("validated").notNull().default(false),
   validatedAt: timestamp("validated_at", { withTimezone: true }),
+  /** Token público para coleta indireta (Typeform / link compartilhado). */
+  shareToken: text("share_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -75,4 +77,23 @@ export const fieldAnswers = pgTable("field_answers", {
   evidence: text("evidence"),
   status: text("status").notNull().default("vazio"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Anexos por campo (coleta indireta): documento ou contato. */
+export const fieldAttachments = pgTable("field_attachments", {
+  id: text("id").primaryKey(),
+  collectionId: text("collection_id")
+    .notNull()
+    .references(() => collections.id, { onDelete: "cascade" }),
+  fieldAnswerId: text("field_answer_id")
+    .notNull()
+    .references(() => fieldAnswers.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // documento | contato
+  fileName: text("file_name"),
+  filePath: text("file_path"),
+  mime: text("mime"),
+  sizeBytes: integer("size_bytes"),
+  contactJson: text("contact_json"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

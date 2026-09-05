@@ -16,6 +16,8 @@ export const fieldTypeSchema = z.enum([
 export const schemaFieldSchema = z.object({
   key: z.string().min(1),
   label: z.string().min(1),
+  /** Pergunta amigável para jornada Typeform / coleta indireta. */
+  question: z.string().optional(),
   type: fieldTypeSchema.default("text"),
   required: z.boolean().default(false),
   hint: z.string().optional(),

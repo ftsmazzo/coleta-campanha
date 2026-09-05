@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SessionRecorder } from "@/components/SessionRecorder";
 import { MunicipalityBlocksField } from "@/components/MunicipalityBlocksField";
+import { ShareLinkCard } from "@/components/ShareLinkCard";
 import { isFilled, textToValue, valueToText, type ContactValue } from "@/lib/field-utils";
 import { municipioBlocksProgress, parseMunicipioBlocks } from "@/lib/municipios";
 import type { DocumentSchema, FieldAnswerView, FieldType } from "@/lib/schema-types";
@@ -311,6 +312,8 @@ export function CollectionWorkspace({
           ))}
         </div>
       </section>
+
+      <ShareLinkCard collectionId={collectionId} />
 
       {hasAudio ? (
         <section className="panel session-panel session-audio-saved">

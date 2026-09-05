@@ -12,6 +12,15 @@ const links = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const isPublicJourney = pathname.startsWith("/r/");
+
+  if (isPublicJourney) {
+    return (
+      <div className="shell shell-public">
+        <main className="main main-public">{children}</main>
+      </div>
+    );
+  }
 
   return (
     <div className="shell">

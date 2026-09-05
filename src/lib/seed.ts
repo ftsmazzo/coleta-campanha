@@ -5,7 +5,7 @@ import { campaigns, documentTypes } from "@/lib/db/schema";
 import { buildOnboardingAmapaSchema } from "@/lib/onboarding-amapa";
 import { nowDate } from "@/lib/paths";
 
-const ONBOARDING_VERSION = 3;
+const ONBOARDING_VERSION = 4;
 
 export async function ensureSeedData() {
   await ensureDb();
@@ -37,7 +37,7 @@ export async function ensureSeedData() {
         schemaJson,
         version: ONBOARDING_VERSION,
         description:
-          "Checklist operacional — território em blocos por município (padrão de banco extensível).",
+          "Checklist operacional — coleta direta no painel + jornada indireta (link Typeform) com campos bloqueados após resposta.",
         updatedAt: stamp,
       })
       .where(eq(documentTypes.id, existingType.id));
