@@ -37,7 +37,7 @@ export default async function ColetaPage({ params }: Props) {
           {collection.title}
         </h1>
         <p style={{ margin: 0, color: "var(--ink-soft)" }}>
-          {docType.name}
+          Sessão · {docType.name}
           {campaign ? ` · ${campaign.candidate}` : ""}
         </p>
         {collection.errorMessage ? (

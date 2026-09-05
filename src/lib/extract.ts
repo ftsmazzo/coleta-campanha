@@ -69,13 +69,42 @@ type ExtractedMap = Record<
   >
 >;
 
-export async function applyExtractionToFields(collectionId: string, extracted: ExtractedMap) {
+export async function applyExtractionToFields(
+  collectionId: string,
+  extracted: ExtractedMap,
+  opts?: { onlyEmpty?: boolean },
+) {
   const rows = await db.select().from(fieldAnswers).where(eq(fieldAnswers.collectionId, collectionId));
   const stamp = nowDate();
+  let applied = 0;
 
   for (const row of rows) {
     const hit = extracted[row.sectionKey]?.[row.fieldKey];
     if (!hit || hit.value == null || hit.value === "") continue;
+
+    if (opts?.onlyEmpty) {
+      const current =
+        row.valueJson == null || row.valueJson === "" || row.valueJson === "null"
+          ? null
+          : (() => {
+              try {
+                return JSON.parse(row.valueJson);
+              } catch {
+                return row.valueJson;
+              }
+            })();
+      const occupied =
+        current != null &&
+        !(typeof current === "string" && !current.trim()) &&
+        !(Array.isArray(current) && current.length === 0) &&
+        !(typeof current === "object" && !Array.isArray(current) && !Object.values(current).some((v) => String(v ?? "").trim()));
+      if (occupied || (row.status !== "vazio" && row.status !== "sugerido" && row.valueJson)) {
+        // keep human edits; still allow overwrite of empty suggested blanks
+        if (row.status === "editado" || row.status === "aceito") continue;
+        if (occupied) continue;
+      }
+    }
+
     await db
       .update(fieldAnswers)
       .set({
@@ -86,7 +115,10 @@ export async function applyExtractionToFields(collectionId: string, extracted: E
         updatedAt: stamp,
       })
       .where(eq(fieldAnswers.id, row.id));
+    applied += 1;
   }
+
+  return applied;
 }
 
 export async function extractAgainstSchema(opts: {

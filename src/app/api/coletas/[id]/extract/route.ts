@@ -36,7 +36,9 @@ export async function POST(request: Request, { params }: Params) {
 
   try {
     const extracted = await extractAgainstSchema({ schema, transcript });
-    await applyExtractionToFields(id, extracted);
+    const fieldsSuggested = await applyExtractionToFields(id, extracted, {
+      onlyEmpty: Boolean(body.onlyEmpty),
+    });
     await db
       .update(collections)
       .set({
@@ -46,10 +48,9 @@ export async function POST(request: Request, { params }: Params) {
       })
       .where(eq(collections.id, id));
 
-    const keys = Object.values(extracted).reduce((acc, section) => acc + Object.keys(section).length, 0);
     return NextResponse.json({
       ok: true,
-      fieldsSuggested: keys,
+      fieldsSuggested,
       engine: openRouterConfigured() ? "ai" : "heuristic",
     });
   } catch (error) {

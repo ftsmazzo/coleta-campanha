@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import type { DocumentSchema, FieldAnswerView } from "@/lib/schema-types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SessionRecorder } from "@/components/SessionRecorder";
+import { isFilled, textToValue, valueToText, type ContactValue } from "@/lib/field-utils";
+import type { DocumentSchema, FieldAnswerView, FieldType } from "@/lib/schema-types";
 
 type Props = {
   collectionId: string;
@@ -12,41 +14,7 @@ type Props = {
   status: string;
 };
 
-function valueToText(value: FieldAnswerView["value"]): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "boolean") return value ? "sim" : "não";
-  if (Array.isArray(value)) {
-    if (value.every((v) => typeof v === "string")) return (value as string[]).join("\n");
-    return JSON.stringify(value, null, 2);
-  }
-  if (typeof value === "object") {
-    const o = value as { nome?: string; telefone?: string; base?: string; nota?: string };
-    if ("nome" in o || "telefone" in o || "base" in o) {
-      return [o.nome, o.telefone, o.base].filter(Boolean).join(" | ") + (o.nota ? `\n${o.nota}` : "");
-    }
-    return JSON.stringify(value, null, 2);
-  }
-  return String(value);
-}
-
-function textToValue(text: string, type: string): FieldAnswerView["value"] {
-  const t = text.trim();
-  if (!t) return null;
-  if (type === "boolean") return /^(sim|true|1|yes)$/i.test(t);
-  if (type === "list") return t.split(/\n+/).map((x) => x.trim()).filter(Boolean);
-  if (type === "contact") {
-    const [nome, telefone, base] = t.split("|").map((x) => x.trim());
-    return { nome: nome || "", telefone: telefone || "", base: base || "" };
-  }
-  if (type === "contact_list") {
-    return t.split(/\n+/).map((line) => {
-      const [nome, telefone, base] = line.split("|").map((x) => x.trim());
-      return { nome: nome || "", telefone: telefone || "", base: base || "" };
-    });
-  }
-  return t;
-}
+type Mode = "formulario" | "gravar" | "importar";
 
 export function CollectionWorkspace({
   collectionId,
@@ -63,18 +31,45 @@ export function CollectionWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState(initialStatus);
   const [audioInfo, setAudioInfo] = useState(audioParts);
+  const [mode, setMode] = useState<Mode>("formulario");
+  const [recordingFile, setRecordingFile] = useState<File | null>(null);
+  const [filterGaps, setFilterGaps] = useState(false);
+  const [savedFlash, setSavedFlash] = useState<string | null>(null);
 
   const fieldTypeMap = useMemo(() => {
-    const map = new Map<string, string>();
+    const map = new Map<string, FieldType>();
     for (const s of schema.sections) {
       for (const f of s.fields) map.set(`${s.key}.${f.key}`, f.type);
     }
     return map;
   }, [schema]);
 
-  const sectionFields = fields.filter((f) => f.sectionKey === sectionKey);
-  const filled = fields.filter((f) => f.status !== "vazio" && valueToText(f.value).trim()).length;
+  const sectionStats = useMemo(
+    () =>
+      schema.sections.map((section) => {
+        const sectionFields = fields.filter((f) => f.sectionKey === section.key);
+        const filled = sectionFields.filter((f) => isFilled(f.value)).length;
+        return {
+          key: section.key,
+          title: section.title,
+          description: section.description,
+          total: sectionFields.length,
+          filled,
+          percent: sectionFields.length ? Math.round((filled / sectionFields.length) * 100) : 0,
+        };
+      }),
+    [fields, schema.sections],
+  );
+
+  const filled = fields.filter((f) => isFilled(f.value)).length;
   const percent = fields.length ? Math.round((filled / fields.length) * 100) : 0;
+  const missing = fields.length - filled;
+
+  const sectionFields = fields
+    .filter((f) => f.sectionKey === sectionKey)
+    .filter((f) => (filterGaps ? !isFilled(f.value) : true));
+
+  const currentSection = schema.sections.find((s) => s.key === sectionKey);
 
   async function uploadAudio(file: File) {
     setPending(true);
@@ -94,16 +89,17 @@ export function CollectionWorkspace({
       durationSeconds: data.durationSeconds,
     });
     setStatus("audio_pronto");
-    setMessage(data.note);
+    setMessage(data.note || "Áudio preparado. Cole a transcrição ou rode a IA quando tiver o texto.");
+    setRecordingFile(null);
   }
 
-  async function runExtract() {
+  async function runExtract(opts?: { onlyEmpty?: boolean }) {
     setPending(true);
     setMessage(null);
     const res = await fetch(`/api/coletas/${collectionId}/extract`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify({ transcript, onlyEmpty: opts?.onlyEmpty ?? false }),
     });
     const data = await res.json();
     setPending(false);
@@ -115,20 +111,31 @@ export function CollectionWorkspace({
     const full = await refreshed.json();
     setFields(full.fields);
     setStatus(full.collection.status);
-    setMessage(`Extração ok · ${data.fieldsSuggested} campos sugeridos (${data.engine})`);
+    setMessage(
+      opts?.onlyEmpty
+        ? `IA preencheu ${data.fieldsSuggested} lacunas (${data.engine})`
+        : `IA sugeriu ${data.fieldsSuggested} campos (${data.engine})`,
+    );
+    setMode("formulario");
   }
 
-  async function saveField(field: FieldAnswerView, text: string) {
-    const type = fieldTypeMap.get(`${field.sectionKey}.${field.fieldKey}`) || "text";
-    const value = textToValue(text, type);
+  async function saveField(field: FieldAnswerView, value: FieldAnswerView["value"]) {
     setFields((prev) =>
-      prev.map((f) => (f.id === field.id ? { ...f, value, status: "editado" as const } : f)),
+      prev.map((f) =>
+        f.id === field.id
+          ? { ...f, value, status: isFilled(value) ? ("editado" as const) : ("vazio" as const) }
+          : f,
+      ),
     );
     await fetch(`/api/coletas/${collectionId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields: [{ id: field.id, value, status: "editado" }] }),
+      body: JSON.stringify({
+        fields: [{ id: field.id, value, status: isFilled(value) ? "editado" : "vazio" }],
+      }),
     });
+    setSavedFlash(field.id);
+    window.setTimeout(() => setSavedFlash((cur) => (cur === field.id ? null : cur)), 1200);
   }
 
   async function validateAll() {
@@ -140,141 +147,400 @@ export function CollectionWorkspace({
     });
     setStatus("validado");
     setPending(false);
-    setMessage("Coleta validada.");
+    setMessage("Sessão validada.");
   }
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
-      <div className="panel" style={{ padding: "1rem 1.1rem", display: "grid", gap: "0.75rem" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <div>
-            <span className="badge badge-muted">{status}</span>
-            {audioInfo?.partCount ? (
-              <span className="badge badge-warn" style={{ marginLeft: 8 }}>
-                áudio · {audioInfo.partCount} parte(s)
-                {audioInfo.chunked ? " · dividido" : ""}
+    <div className="session">
+      <section className="session-hero panel">
+        <div className="session-hero-grid">
+          <div className="progress-ring" style={{ ["--p" as string]: `${percent}` }}>
+            <div className="progress-ring-inner">
+              <strong>{percent}%</strong>
+              <span>
+                {filled}/{fields.length}
               </span>
-            ) : null}
+            </div>
           </div>
-          <strong>
-            {percent}% · {filled}/{fields.length}
-          </strong>
-        </div>
-        <div style={{ height: 8, background: "var(--line)", borderRadius: 99, overflow: "hidden" }}>
-          <div style={{ width: `${percent}%`, height: "100%", background: "var(--accent)", transition: "width 240ms ease" }} />
-        </div>
-      </div>
-
-      <div className="panel" style={{ padding: "1rem 1.1rem", display: "grid", gap: "0.75rem" }}>
-        <h2 className="display" style={{ margin: 0, fontSize: "1.15rem" }}>
-          Entrada
-        </h2>
-        <div className="field">
-          <label htmlFor="audio">Upload de áudio (longos são quebrados automaticamente)</label>
-          <input
-            id="audio"
-            type="file"
-            accept="audio/*,.webm,.mp3,.m4a,.wav,.ogg"
-            disabled={pending}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void uploadAudio(file);
-            }}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="transcript">Transcrição ou texto colado</label>
-          <textarea
-            id="transcript"
-            value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-            placeholder="Cole a fala da reunião, notas ou transcrição do áudio…"
-            style={{ minHeight: 160 }}
-          />
-        </div>
-        <div style={{ display: "flex", gap: "0.55rem", flexWrap: "wrap" }}>
-          <button className="btn btn-primary" type="button" disabled={pending || !transcript.trim()} onClick={runExtract}>
-            Extrair para campos
-          </button>
-          <button className="btn btn-secondary" type="button" disabled={pending} onClick={validateAll}>
-            Validar coleta
-          </button>
-        </div>
-        {message ? <p style={{ margin: 0, color: "var(--ink-soft)", fontSize: "0.9rem" }}>{message}</p> : null}
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,240px) 1fr", gap: "0.85rem" }}>
-        <nav className="panel" style={{ padding: "0.65rem", alignSelf: "start", display: "grid", gap: "0.25rem" }}>
-          {schema.sections.map((section) => {
-            const count = fields.filter((f) => f.sectionKey === section.key && valueToText(f.value).trim()).length;
-            return (
+          <div className="session-hero-copy">
+            <div className="session-badges">
+              <span className={status === "validado" ? "badge" : "badge badge-muted"}>{status}</span>
+              {audioInfo?.partCount ? (
+                <span className="badge badge-warn">
+                  áudio · {audioInfo.partCount} parte(s)
+                  {audioInfo.chunked ? " · dividido" : ""}
+                </span>
+              ) : null}
+              <span className="badge badge-muted">{missing} lacunas</span>
+            </div>
+            <h2 className="display session-hero-title">Dashboard da sessão</h2>
+            <p>
+              Preencha o formulário seção a seção. Grave ou importe só quando quiser acelerar com IA. Cada campo salva
+              sozinho.
+            </p>
+            <div className="session-hero-actions">
               <button
-                key={section.key}
                 type="button"
-                onClick={() => setSectionKey(section.key)}
-                style={{
-                  textAlign: "left",
-                  border: "none",
-                  background: sectionKey === section.key ? "rgba(31,107,74,0.12)" : "transparent",
-                  borderRadius: 8,
-                  padding: "0.65rem 0.7rem",
-                  cursor: "pointer",
-                  color: "var(--ink)",
-                }}
+                className={`btn ${mode === "formulario" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setMode("formulario")}
               >
-                <div style={{ fontWeight: 600, fontSize: "0.9rem" }}>{section.title}</div>
-                <div style={{ fontSize: "0.75rem", color: "var(--ink-soft)" }}>
-                  {count}/{section.fields.length}
-                </div>
+                Formulário
               </button>
-            );
-          })}
-        </nav>
+              <button
+                type="button"
+                className={`btn ${mode === "gravar" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setMode("gravar")}
+              >
+                Gravar áudio
+              </button>
+              <button
+                type="button"
+                className={`btn ${mode === "importar" ? "btn-primary" : "btn-secondary"}`}
+                onClick={() => setMode("importar")}
+              >
+                Importar / IA
+              </button>
+              <button type="button" className="btn btn-secondary" disabled={pending} onClick={validateAll}>
+                Validar sessão
+              </button>
+            </div>
+            {message ? <p className="session-msg">{message}</p> : null}
+          </div>
+        </div>
 
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          {sectionFields.map((field) => (
-            <FieldEditor
-              key={`${field.id}:${field.status}:${valueToText(field.value).slice(0, 24)}`}
-              field={field}
-              onSave={saveField}
-            />
+        <div className="section-progress-grid">
+          {sectionStats.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`section-chip ${sectionKey === s.key ? "is-active" : ""}`}
+              onClick={() => {
+                setSectionKey(s.key);
+                setMode("formulario");
+              }}
+            >
+              <div className="section-chip-top">
+                <strong>{s.title}</strong>
+                <span>{s.percent}%</span>
+              </div>
+              <div className="mini-bar">
+                <i style={{ width: `${s.percent}%` }} />
+              </div>
+              <span className="section-chip-meta">
+                {s.filled}/{s.total} campos
+              </span>
+            </button>
           ))}
         </div>
-      </div>
+      </section>
+
+      {mode === "gravar" ? (
+        <section className="panel session-panel">
+          <h3 className="display panel-title">Gravação na plataforma</h3>
+          <p className="panel-sub">Mesmo fluxo do Orbe: grave aqui, sem precisar de arquivo externo.</p>
+          <SessionRecorder onRecordingReady={setRecordingFile} disabled={pending} />
+          {recordingFile ? (
+            <div className="recorder-send">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={pending}
+                onClick={() => void uploadAudio(recordingFile)}
+              >
+                {pending ? "Enviando…" : "Enviar gravação para a sessão"}
+              </button>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {mode === "importar" ? (
+        <section className="panel session-panel">
+          <h3 className="display panel-title">Importar e completar com IA</h3>
+          <p className="panel-sub">Opção secundária: upload, texto colado ou auto-completar lacunas.</p>
+          <div className="field">
+            <label htmlFor="audio">Upload de áudio</label>
+            <input
+              id="audio"
+              type="file"
+              accept="audio/*,.webm,.mp3,.m4a,.wav,.ogg"
+              disabled={pending}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadAudio(file);
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="transcript">Transcrição / notas / texto</label>
+            <textarea
+              id="transcript"
+              value={transcript}
+              onChange={(e) => setTranscript(e.target.value)}
+              placeholder="Cole a fala da reunião, notas ou transcrição…"
+              style={{ minHeight: 140 }}
+            />
+          </div>
+          <div className="session-hero-actions">
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={pending || !transcript.trim()}
+              onClick={() => void runExtract({ onlyEmpty: true })}
+            >
+              IA: completar só lacunas
+            </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              disabled={pending || !transcript.trim()}
+              onClick={() => void runExtract({ onlyEmpty: false })}
+            >
+              IA: varrer e sugerir tudo
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="session-body">
+        <nav className="panel session-nav">
+          <div className="session-nav-head">
+            <strong>Seções</strong>
+            <label className="gap-toggle">
+              <input type="checkbox" checked={filterGaps} onChange={(e) => setFilterGaps(e.target.checked)} />
+              Só lacunas
+            </label>
+          </div>
+          {sectionStats.map((s) => (
+            <button
+              key={s.key}
+              type="button"
+              className={`session-nav-item ${sectionKey === s.key ? "is-active" : ""}`}
+              onClick={() => {
+                setSectionKey(s.key);
+                setMode("formulario");
+              }}
+            >
+              <span>{s.title}</span>
+              <em>
+                {s.filled}/{s.total}
+              </em>
+              <div className="mini-bar">
+                <i style={{ width: `${s.percent}%` }} />
+              </div>
+            </button>
+          ))}
+        </nav>
+
+        <div className="session-form">
+          <div className="session-form-head panel">
+            <div>
+              <h3 className="display panel-title">{currentSection?.title ?? "Seção"}</h3>
+              {currentSection?.description ? <p className="panel-sub">{currentSection.description}</p> : null}
+            </div>
+            <span className="badge">
+              {sectionStats.find((s) => s.key === sectionKey)?.filled ?? 0}/
+              {sectionStats.find((s) => s.key === sectionKey)?.total ?? 0}
+            </span>
+          </div>
+
+          {sectionFields.length === 0 ? (
+            <div className="panel empty-section">Nada nesta visão. Desmarque “Só lacunas” ou mude de seção.</div>
+          ) : (
+            sectionFields.map((field) => {
+              const type = fieldTypeMap.get(`${field.sectionKey}.${field.fieldKey}`) || "text";
+              const schemaField = currentSection?.fields.find((f) => f.key === field.fieldKey);
+              return (
+                <DynamicFieldCard
+                  key={field.id}
+                  field={field}
+                  type={type}
+                  hint={schemaField?.hint}
+                  saved={savedFlash === field.id}
+                  onSave={(value) => saveField(field, value)}
+                />
+              );
+            })
+          )}
+        </div>
+      </section>
     </div>
   );
 }
 
-function FieldEditor({
+function DynamicFieldCard({
   field,
+  type,
+  hint,
+  saved,
   onSave,
 }: {
   field: FieldAnswerView;
-  onSave: (field: FieldAnswerView, text: string) => Promise<void>;
+  type: FieldType;
+  hint?: string;
+  saved: boolean;
+  onSave: (value: FieldAnswerView["value"]) => Promise<void>;
 }) {
-  const [text, setText] = useState(valueToText(field.value));
+  const filled = isFilled(field.value);
 
   return (
-    <div className="panel" style={{ padding: "0.9rem 1rem", display: "grid", gap: "0.45rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem", flexWrap: "wrap" }}>
-        <strong style={{ fontSize: "0.95rem" }}>{field.label}</strong>
-        <span className={field.status === "vazio" ? "badge badge-muted" : "badge"}>{field.status}</span>
-      </div>
+    <article className={`field-card panel ${filled ? "is-filled" : "is-empty"} ${saved ? "is-saved" : ""}`}>
+      <header className="field-card-head">
+        <div>
+          <strong>{field.label}</strong>
+          {hint ? <p className="field-hint">{hint}</p> : null}
+        </div>
+        <div className="field-card-tags">
+          <span className={filled ? "badge" : "badge badge-muted"}>{filled ? field.status : "lacuna"}</span>
+          {saved ? <span className="badge">salvo</span> : null}
+        </div>
+      </header>
+
+      {type === "contact" ? (
+        <ContactFields
+          value={(typeof field.value === "object" && field.value && !Array.isArray(field.value)
+            ? field.value
+            : {}) as ContactValue}
+          onCommit={(value) => void onSave(value)}
+        />
+      ) : type === "boolean" ? (
+        <BooleanField value={Boolean(field.value)} onCommit={(value) => void onSave(value)} />
+      ) : type === "list" || type === "contact_list" ? (
+        <ListField
+          value={valueToText(field.value)}
+          placeholder={type === "contact_list" ? "Uma pessoa por linha: NOME | TELEFONE | BASE" : "Um item por linha"}
+          onCommit={(text) => void onSave(textToValue(text, type))}
+        />
+      ) : (
+        <TextField
+          multiline={type === "textarea" || type === "text"}
+          value={valueToText(field.value)}
+          placeholder="Digite e saia do campo para salvar"
+          onCommit={(text) => void onSave(textToValue(text, type))}
+        />
+      )}
+
+      {field.evidence ? (
+        <p className="field-evidence">
+          evidência: {field.evidence}
+          {field.confidence ? ` · ${field.confidence}` : ""}
+        </p>
+      ) : null}
+    </article>
+  );
+}
+
+function TextField({
+  value,
+  multiline,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  multiline: boolean;
+  placeholder: string;
+  onCommit: (text: string) => void;
+}) {
+  const [text, setText] = useState(value);
+  const last = useRef(value);
+  useEffect(() => {
+    setText(value);
+    last.current = value;
+  }, [value]);
+
+  function commit() {
+    if (text !== last.current) {
+      last.current = text;
+      onCommit(text);
+    }
+  }
+
+  if (multiline) {
+    return (
       <textarea
         value={text}
         onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          if (text !== valueToText(field.value)) void onSave(field, text);
-        }}
-        style={{ minHeight: 72 }}
-        placeholder="Preencher ou aceitar sugestão da IA"
+        onBlur={commit}
+        placeholder={placeholder}
+        rows={4}
       />
-      {field.evidence ? (
-        <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--ink-soft)" }}>
-          evidência: {field.evidence}
-          {field.confidence ? ` · confiança ${field.confidence}` : ""}
-        </p>
-      ) : null}
+    );
+  }
+
+  return (
+    <input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      placeholder={placeholder}
+    />
+  );
+}
+
+function ListField({
+  value,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  placeholder: string;
+  onCommit: (text: string) => void;
+}) {
+  return <TextField value={value} multiline placeholder={placeholder} onCommit={onCommit} />;
+}
+
+function BooleanField({ value, onCommit }: { value: boolean; onCommit: (v: boolean) => void }) {
+  return (
+    <div className="bool-row">
+      <button type="button" className={`btn ${value ? "btn-primary" : "btn-secondary"}`} onClick={() => onCommit(true)}>
+        Sim / feito
+      </button>
+      <button
+        type="button"
+        className={`btn ${!value ? "btn-primary" : "btn-secondary"}`}
+        onClick={() => onCommit(false)}
+      >
+        Não / pendente
+      </button>
+    </div>
+  );
+}
+
+function ContactFields({
+  value,
+  onCommit,
+}: {
+  value: ContactValue;
+  onCommit: (value: ContactValue) => void;
+}) {
+  const [nome, setNome] = useState(value.nome ?? "");
+  const [telefone, setTelefone] = useState(value.telefone ?? "");
+  const [base, setBase] = useState(value.base ?? "");
+
+  useEffect(() => {
+    setNome(value.nome ?? "");
+    setTelefone(value.telefone ?? "");
+    setBase(value.base ?? "");
+  }, [value.nome, value.telefone, value.base]);
+
+  function commit() {
+    onCommit({ nome: nome.trim(), telefone: telefone.trim(), base: base.trim() });
+  }
+
+  return (
+    <div className="contact-grid">
+      <div className="field">
+        <label>Nome</label>
+        <input value={nome} onChange={(e) => setNome(e.target.value)} onBlur={commit} placeholder="Nome" />
+      </div>
+      <div className="field">
+        <label>Telefone</label>
+        <input value={telefone} onChange={(e) => setTelefone(e.target.value)} onBlur={commit} placeholder="(xx) …" />
+      </div>
+      <div className="field">
+        <label>Base</label>
+        <input value={base} onChange={(e) => setBase(e.target.value)} onBlur={commit} placeholder="Cidade / comitê" />
+      </div>
     </div>
   );
 }
