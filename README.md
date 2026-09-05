@@ -25,8 +25,8 @@ Abre em [http://localhost:3100](http://localhost:3100).
 
 ## Produção
 
-- App: https://coleta-campanha-app.kxryyk.easypanel.host  
-- n8n: https://coleta-campanha-n8n.kxryyk.easypanel.host  
+- App (oficial, IP 65.109): https://coleta-campanha-app.se860g.easypanel.host  
+- n8n (oficial): https://coleta-campanha-n8n.se860g.easypanel.host  
 - Detalhes: `infra/easypanel.md`
 
 ## O que já existe

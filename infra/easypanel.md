@@ -1,31 +1,30 @@
 # EasyPanel — Coleta Campanha
 
-> O painel está no **limite de projetos**. Os serviços ficaram no projeto existente **`campanha-360-ia`** (fora de `inteligencia-eleitora`). Quando houver slot, dá para mover para um projeto `coleta-campanha` dedicado.
+## Servidor correto (oficial)
 
-## Serviços
+| Item | Valor |
+|------|--------|
+| IP | **65.109.139.4** |
+| EasyPanel | mesmo do Inteligência Eleitoral |
+| Projeto | **`coleta-campanha`** (dedicado; fora de `inteligencia-eleitoral-brasil`) |
 
-| Serviço | Tipo | Acesso |
-|---------|------|--------|
-| `coleta-postgres` | PostgreSQL 16 | interno `coleta-postgres:5432` |
-| `coleta-n8n` | App image `n8nio/n8n` | https://coleta-campanha-n8n.kxryyk.easypanel.host |
-| `coleta-app` | App GitHub + Dockerfile | https://coleta-campanha-app.kxryyk.easypanel.host |
+### Serviços
 
-Repo: https://github.com/ftsmazzo/coleta-campanha
+| Serviço | Tipo | URL |
+|---------|------|-----|
+| `coleta-app` | App (GitHub `ftsmazzo/coleta-campanha`) | https://coleta-campanha-app.se860g.easypanel.host |
+| `coleta-n8n` | Image `n8nio/n8n` | https://coleta-campanha-n8n.se860g.easypanel.host |
+| `coleta-postgres` | PostgreSQL 16 | interno `coleta-postgres:5432` / DB `coleta` |
 
-## Env do app
+OpenRouter / STT: variáveis no serviço `coleta-app` (mesma chave do ambiente IE neste servidor).
 
-```
-DATABASE_URL=postgresql://coleta:<senha>@coleta-postgres:5432/coleta
-APP_URL=https://coleta-campanha-app.kxryyk.easypanel.host
-OPENROUTER_API_KEY=<openrouter>
-OPENROUTER_MODEL=anthropic/claude-sonnet-4
-OPENROUTER_EXTRACT_MODEL=anthropic/claude-sonnet-4
-OPENROUTER_SCHEMA_MODEL=google/gemini-2.5-flash
-TZ=America/Sao_Paulo
-FFMPEG_BIN=/usr/bin/ffmpeg
-```
+---
 
-## Modelos OpenRouter
+## Ambiente legado (não usar como oficial)
 
-- Extração: `anthropic/claude-sonnet-4`
-- Schema a partir de texto: `google/gemini-2.5-flash`
+Criado por engano no EasyPanel **46.62.130.249**, projeto `campanha-360-ia`:
+
+- https://coleta-campanha-app.kxryyk.easypanel.host
+- https://coleta-campanha-n8n.kxryyk.easypanel.host
+
+Pode permanecer para teste temporário. Remover só com autorização explícita.
