@@ -1,6 +1,6 @@
 # EasyPanel — Coleta Campanha
 
-## Servidor correto (oficial)
+## Servidor oficial
 
 | Item | Valor |
 |------|--------|
@@ -16,15 +16,10 @@
 | `coleta-n8n` | Image `n8nio/n8n` | https://coleta-campanha-n8n.se860g.easypanel.host |
 | `coleta-postgres` | PostgreSQL 16 | interno `coleta-postgres:5432` / DB `coleta` |
 
-OpenRouter / STT: variáveis no serviço `coleta-app` (mesma chave do ambiente IE neste servidor).
+OpenRouter / STT: variáveis no serviço `coleta-app`.
 
 ---
 
-## Ambiente legado (não usar como oficial)
+## Ambiente legado
 
-Criado por engano no EasyPanel **46.62.130.249**, projeto `campanha-360-ia`:
-
-- https://coleta-campanha-app.kxryyk.easypanel.host
-- https://coleta-campanha-n8n.kxryyk.easypanel.host
-
-Pode permanecer para teste temporário. Remover só com autorização explícita.
+Os serviços `coleta-app`, `coleta-n8n` e `coleta-postgres` no EasyPanel **46.62.130.249** / projeto `campanha-360-ia` foram **removidos**.
