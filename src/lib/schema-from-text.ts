@@ -101,7 +101,7 @@ Formato EXATO:
         {
           "key": "snake_case",
           "label": "Pergunta ou rótulo",
-          "type": "text|textarea|list|contact|contact_list|boolean|date|select",
+          "type": "text|textarea|list|contact|contact_list|boolean|date|select|municipio_blocks",
           "required": true/false,
           "hint": "opcional"
         }
@@ -113,6 +113,7 @@ Formato EXATO:
 Regras:
 - Use type "contact" quando pedir NOME/TELEFONE/BASE.
 - Use "contact_list" para listas de pessoas.
+- Use type "municipio_blocks" quando o texto pedir estrutura por município / território.
 - Use "list" para listas de itens sem contato.
 - Não invente seções que não existam no texto.
 - Responda SOMENTE com JSON válido.

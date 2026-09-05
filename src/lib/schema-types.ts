@@ -9,6 +9,8 @@ export const fieldTypeSchema = z.enum([
   "boolean",
   "date",
   "select",
+  /** Lista estruturada de municípios — um registro validado por cidade. */
+  "municipio_blocks",
 ]);
 
 export const schemaFieldSchema = z.object({
@@ -18,6 +20,8 @@ export const schemaFieldSchema = z.object({
   required: z.boolean().default(false),
   hint: z.string().optional(),
   options: z.array(z.string()).optional(),
+  /** UF padrão ao adicionar município (ex.: AP). */
+  defaultUf: z.string().optional(),
 });
 
 export const schemaSectionSchema = z.object({
@@ -44,7 +48,8 @@ export type FieldAnswerValue =
   | boolean
   | null
   | { nome?: string; telefone?: string; base?: string; [k: string]: unknown }
-  | { nome?: string; telefone?: string; base?: string; [k: string]: unknown }[];
+  | { nome?: string; telefone?: string; base?: string; [k: string]: unknown }[]
+  | Record<string, unknown>[];
 
 export type FieldAnswerView = {
   id: string;

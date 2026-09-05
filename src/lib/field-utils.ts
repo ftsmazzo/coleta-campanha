@@ -1,3 +1,7 @@
+import {
+  isMunicipioBlockFilled,
+  parseMunicipioBlocks,
+} from "@/lib/municipios";
 import type { FieldAnswerValue, FieldAnswerView } from "@/lib/schema-types";
 
 export function valueToText(value: FieldAnswerView["value"]): string {
@@ -22,7 +26,13 @@ export function isFilled(value: FieldAnswerView["value"]): boolean {
   if (value == null) return false;
   if (typeof value === "boolean") return true;
   if (typeof value === "string") return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
+  if (Array.isArray(value)) {
+    if (value.length === 0) return false;
+    if (value.every((item) => item && typeof item === "object" && "municipio" in (item as object))) {
+      return parseMunicipioBlocks(value).some(isMunicipioBlockFilled);
+    }
+    return true;
+  }
   if (typeof value === "object") {
     const o = value as Record<string, unknown>;
     return Object.values(o).some((v) => String(v ?? "").trim().length > 0);

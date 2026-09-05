@@ -3,8 +3,26 @@ import { eq } from "drizzle-orm";
 import { openRouterChat, openRouterConfigured, openRouterModel } from "@/lib/ai/openrouter";
 import { db } from "@/lib/db";
 import { fieldAnswers } from "@/lib/db/schema";
+import {
+  emptyMunicipioBlock,
+  isPessoaFilled,
+  parseMunicipioBlocks,
+  seedAmapaMunicipioBlocks,
+} from "@/lib/municipios";
 import { nowDate } from "@/lib/paths";
-import type { DocumentSchema, FieldAnswerValue } from "@/lib/schema-types";
+import type { DocumentSchema, FieldAnswerValue, SchemaField } from "@/lib/schema-types";
+
+function defaultValueForField(field: SchemaField): string | null {
+  if (field.type === "municipio_blocks") {
+    const uf = (field.defaultUf || "AP").toUpperCase();
+    const blocks =
+      uf === "AP"
+        ? seedAmapaMunicipioBlocks()
+        : [];
+    return JSON.stringify(blocks);
+  }
+  return null;
+}
 
 function emptyAnswers(collectionId: string, schema: DocumentSchema) {
   const stamp = nowDate();
@@ -15,7 +33,7 @@ function emptyAnswers(collectionId: string, schema: DocumentSchema) {
       sectionKey: section.key,
       fieldKey: field.key,
       label: field.label,
-      valueJson: null as string | null,
+      valueJson: defaultValueForField(field),
       confidence: null as string | null,
       evidence: null as string | null,
       status: "vazio",
@@ -24,14 +42,50 @@ function emptyAnswers(collectionId: string, schema: DocumentSchema) {
   );
 }
 
+/** Cria campos faltantes conforme o schema atual (permite evoluir tipo de documento). */
 export async function ensureFieldRows(collectionId: string, schema: DocumentSchema) {
-  const existing = await db
-    .select({ id: fieldAnswers.id })
-    .from(fieldAnswers)
-    .where(eq(fieldAnswers.collectionId, collectionId));
-  if (existing.length) return;
-  const rows = emptyAnswers(collectionId, schema);
-  if (rows.length) await db.insert(fieldAnswers).values(rows);
+  const existing = await db.select().from(fieldAnswers).where(eq(fieldAnswers.collectionId, collectionId));
+  const existingKeys = new Set(existing.map((r) => `${r.sectionKey}::${r.fieldKey}`));
+  const stamp = nowDate();
+  const toInsert = [];
+
+  for (const section of schema.sections) {
+    for (const field of section.fields) {
+      const key = `${section.key}::${field.key}`;
+      if (existingKeys.has(key)) {
+        const row = existing.find((r) => r.sectionKey === section.key && r.fieldKey === field.key);
+        if (
+          row &&
+          field.type === "municipio_blocks" &&
+          (!row.valueJson || row.valueJson === "null" || row.valueJson === "[]")
+        ) {
+          await db
+            .update(fieldAnswers)
+            .set({
+              valueJson: defaultValueForField(field),
+              label: field.label,
+              updatedAt: stamp,
+            })
+            .where(eq(fieldAnswers.id, row.id));
+        }
+        continue;
+      }
+      toInsert.push({
+        id: uuid(),
+        collectionId,
+        sectionKey: section.key,
+        fieldKey: field.key,
+        label: field.label,
+        valueJson: defaultValueForField(field),
+        confidence: null as string | null,
+        evidence: null as string | null,
+        status: "vazio",
+        updatedAt: stamp,
+      });
+    }
+  }
+
+  if (toInsert.length) await db.insert(fieldAnswers).values(toInsert);
 }
 
 function parseMaybeJson(raw: string | null): FieldAnswerValue {
@@ -82,27 +136,40 @@ export async function applyExtractionToFields(
     const hit = extracted[row.sectionKey]?.[row.fieldKey];
     if (!hit || hit.value == null || hit.value === "") continue;
 
+    // Merge especial para municipio_blocks: atualiza por nome de município
+    if (Array.isArray(hit.value) && hit.value.some((v) => v && typeof v === "object" && "municipio" in (v as object))) {
+      const current = parseMaybeJson(row.valueJson);
+      const merged = mergeMunicipioBlocks(current, hit.value);
+      if (opts?.onlyEmpty && row.status === "editado") {
+        // ainda permite merge em lacunas internas
+      }
+      await db
+        .update(fieldAnswers)
+        .set({
+          valueJson: JSON.stringify(merged),
+          confidence: hit.confianca ?? "media",
+          evidence: hit.evidencia ?? null,
+          status: row.status === "editado" ? "editado" : "sugerido",
+          updatedAt: stamp,
+        })
+        .where(eq(fieldAnswers.id, row.id));
+      applied += 1;
+      continue;
+    }
+
     if (opts?.onlyEmpty) {
-      const current =
-        row.valueJson == null || row.valueJson === "" || row.valueJson === "null"
-          ? null
-          : (() => {
-              try {
-                return JSON.parse(row.valueJson);
-              } catch {
-                return row.valueJson;
-              }
-            })();
+      const current = parseMaybeJson(row.valueJson);
       const occupied =
         current != null &&
         !(typeof current === "string" && !current.trim()) &&
         !(Array.isArray(current) && current.length === 0) &&
-        !(typeof current === "object" && !Array.isArray(current) && !Object.values(current).some((v) => String(v ?? "").trim()));
-      if (occupied || (row.status !== "vazio" && row.status !== "sugerido" && row.valueJson)) {
-        // keep human edits; still allow overwrite of empty suggested blanks
-        if (row.status === "editado" || row.status === "aceito") continue;
-        if (occupied) continue;
-      }
+        !(
+          typeof current === "object" &&
+          !Array.isArray(current) &&
+          !Object.values(current as object).some((v) => String(v ?? "").trim())
+        );
+      if (row.status === "editado" || row.status === "aceito") continue;
+      if (occupied) continue;
     }
 
     await db
@@ -121,6 +188,39 @@ export async function applyExtractionToFields(
   return applied;
 }
 
+function mergeMunicipioBlocks(current: FieldAnswerValue, incoming: unknown): unknown[] {
+  const base = parseMunicipioBlocks(current);
+  const updates = parseMunicipioBlocks(incoming);
+
+  for (const upd of updates) {
+    const idx = base.findIndex((b) => b.municipio.toLowerCase() === upd.municipio.toLowerCase());
+    if (idx < 0) {
+      base.push(emptyMunicipioBlock(upd));
+      continue;
+    }
+    const cur = base[idx];
+    base[idx] = {
+      ...cur,
+      classificacao: upd.classificacao || cur.classificacao,
+      estruturaLocal: upd.estruturaLocal || cur.estruturaLocal,
+      aliados: upd.aliados || cur.aliados,
+      capacidadeMobilizacao: upd.capacidadeMobilizacao || cur.capacidadeMobilizacao,
+      agendaPactuada: upd.agendaPactuada || cur.agendaPactuada,
+      situacaoEleitoral: upd.situacaoEleitoral || cur.situacaoEleitoral,
+      necessidades: upd.necessidades || cur.necessidades,
+      responsavelPolitico: isPessoaFilled(upd.responsavelPolitico)
+        ? upd.responsavelPolitico
+        : cur.responsavelPolitico,
+      coordenadorCampanha: isPessoaFilled(upd.coordenadorCampanha)
+        ? upd.coordenadorCampanha
+        : cur.coordenadorCampanha,
+      ibge: upd.ibge || cur.ibge,
+      uf: upd.uf || cur.uf,
+    };
+  }
+  return base;
+}
+
 export async function extractAgainstSchema(opts: {
   schema: DocumentSchema;
   transcript: string;
@@ -132,7 +232,12 @@ export async function extractAgainstSchema(opts: {
   const compactSchema = opts.schema.sections.map((s) => ({
     key: s.key,
     title: s.title,
-    fields: s.fields.map((f) => ({ key: f.key, label: f.label, type: f.type })),
+    fields: s.fields.map((f) => ({
+      key: f.key,
+      label: f.label,
+      type: f.type,
+      defaultUf: f.defaultUf,
+    })),
   }));
 
   const text = await openRouterChat({
@@ -147,7 +252,7 @@ Responda SOMENTE JSON no formato:
 {
   "section_key": {
     "field_key": {
-      "value": "... ou objeto {nome,telefone,base} ou array",
+      "value": "...",
       "confianca": "alta|media|baixa",
       "evidencia": "trecho curto <= 12 palavras"
     }
@@ -157,9 +262,24 @@ Responda SOMENTE JSON no formato:
 Regras:
 - Não invente nomes, telefones ou fatos.
 - Campos sem evidência: omita.
-- contact → { "nome", "telefone", "base" } quando possível.
+- contact → { "nome", "telefone", "base" }.
 - contact_list → array desses objetos.
 - list → array de strings.
+- municipio_blocks → array de objetos, UM POR MUNICÍPIO mencionado:
+  {
+    "municipio": "Macapá",
+    "uf": "AP",
+    "responsavelPolitico": { "nome", "telefone", "base" },
+    "coordenadorCampanha": { "nome", "telefone", "base" },
+    "estruturaLocal": "",
+    "aliados": "",
+    "capacidadeMobilizacao": "",
+    "agendaPactuada": "",
+    "situacaoEleitoral": "",
+    "necessidades": "",
+    "classificacao": "estruturada|em_implantacao|fragil|sem_estrutura"
+  }
+  Separe municípios distintos. Nunca junte várias cidades num único texto.
 
 TEXTO:
 ${opts.transcript.slice(0, 20000)}`,

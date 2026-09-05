@@ -5,9 +5,12 @@ import { campaigns, documentTypes } from "@/lib/db/schema";
 import { buildOnboardingAmapaSchema } from "@/lib/onboarding-amapa";
 import { nowDate } from "@/lib/paths";
 
+const ONBOARDING_VERSION = 3;
+
 export async function ensureSeedData() {
   await ensureDb();
   const stamp = nowDate();
+  const schemaJson = JSON.stringify(buildOnboardingAmapaSchema());
 
   const [existingType] = await db
     .select()
@@ -21,12 +24,23 @@ export async function ensureSeedData() {
       slug: "onboarding_campanha",
       name: "Onboarding de campanha",
       description: "Checklist operacional para Coordenação Geral — visão integrada da operação.",
-      version: 1,
-      schemaJson: JSON.stringify(buildOnboardingAmapaSchema()),
+      version: ONBOARDING_VERSION,
+      schemaJson,
       sourceText: "Seed Amapá 2026 / Inteligência Eleitoral Onboarding V4.2",
       createdAt: stamp,
       updatedAt: stamp,
     });
+  } else if ((existingType.version ?? 1) < ONBOARDING_VERSION) {
+    await db
+      .update(documentTypes)
+      .set({
+        schemaJson,
+        version: ONBOARDING_VERSION,
+        description:
+          "Checklist operacional — território em blocos por município (padrão de banco extensível).",
+        updatedAt: stamp,
+      })
+      .where(eq(documentTypes.id, existingType.id));
   }
 
   const [existingCampaign] = await db

@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SessionRecorder } from "@/components/SessionRecorder";
+import { MunicipalityBlocksField } from "@/components/MunicipalityBlocksField";
 import { isFilled, textToValue, valueToText, type ContactValue } from "@/lib/field-utils";
+import { municipioBlocksProgress, parseMunicipioBlocks } from "@/lib/municipios";
 import type { DocumentSchema, FieldAnswerView, FieldType } from "@/lib/schema-types";
 
 type Props = {
@@ -48,26 +50,62 @@ export function CollectionWorkspace({
     () =>
       schema.sections.map((section) => {
         const sectionFields = fields.filter((f) => f.sectionKey === section.key);
-        const filled = sectionFields.filter((f) => isFilled(f.value)).length;
+        let total = 0;
+        let filledCount = 0;
+
+        for (const schemaField of section.fields) {
+          const answer = sectionFields.find((f) => f.fieldKey === schemaField.key);
+          if (schemaField.type === "municipio_blocks") {
+            const prog = municipioBlocksProgress(parseMunicipioBlocks(answer?.value));
+            total += prog.total || 1;
+            filledCount += prog.filled;
+            continue;
+          }
+          total += 1;
+          if (answer && isFilled(answer.value)) filledCount += 1;
+        }
+
         return {
           key: section.key,
           title: section.title,
           description: section.description,
-          total: sectionFields.length,
-          filled,
-          percent: sectionFields.length ? Math.round((filled / sectionFields.length) * 100) : 0,
+          total,
+          filled: filledCount,
+          percent: total ? Math.round((filledCount / total) * 100) : 0,
         };
       }),
     [fields, schema.sections],
   );
 
-  const filled = fields.filter((f) => isFilled(f.value)).length;
-  const percent = fields.length ? Math.round((filled / fields.length) * 100) : 0;
-  const missing = fields.length - filled;
+  const overall = useMemo(() => {
+    const total = sectionStats.reduce((acc, s) => acc + s.total, 0);
+    const filledCount = sectionStats.reduce((acc, s) => acc + s.filled, 0);
+    return {
+      total,
+      filled: filledCount,
+      percent: total ? Math.round((filledCount / total) * 100) : 0,
+      missing: total - filledCount,
+    };
+  }, [sectionStats]);
+
+  const filled = overall.filled;
+  const percent = overall.percent;
+  const missing = overall.missing;
 
   const sectionFields = fields
     .filter((f) => f.sectionKey === sectionKey)
-    .filter((f) => (filterGaps ? !isFilled(f.value) : true));
+    .filter((f) => {
+      const schemaField = schema.sections
+        .find((s) => s.key === sectionKey)
+        ?.fields.find((sf) => sf.key === f.fieldKey);
+      if (!schemaField) return false;
+      if (!filterGaps) return true;
+      if (schemaField.type === "municipio_blocks") {
+        const prog = municipioBlocksProgress(parseMunicipioBlocks(f.value));
+        return prog.filled < prog.total || prog.total === 0;
+      }
+      return !isFilled(f.value);
+    });
 
   const currentSection = schema.sections.find((s) => s.key === sectionKey);
 
@@ -356,6 +394,7 @@ export function CollectionWorkspace({
                   field={field}
                   type={type}
                   hint={schemaField?.hint}
+                  defaultUf={schemaField?.defaultUf}
                   saved={savedFlash === field.id}
                   onSave={(value) => saveField(field, value)}
                 />
@@ -372,16 +411,20 @@ function DynamicFieldCard({
   field,
   type,
   hint,
+  defaultUf,
   saved,
   onSave,
 }: {
   field: FieldAnswerView;
   type: FieldType;
   hint?: string;
+  defaultUf?: string;
   saved: boolean;
   onSave: (value: FieldAnswerView["value"]) => Promise<void>;
 }) {
-  const filled = isFilled(field.value);
+  const munProg =
+    type === "municipio_blocks" ? municipioBlocksProgress(parseMunicipioBlocks(field.value)) : null;
+  const filled = munProg ? munProg.total > 0 && munProg.filled === munProg.total : isFilled(field.value);
 
   return (
     <article className={`field-card panel ${filled ? "is-filled" : "is-empty"} ${saved ? "is-saved" : ""}`}>
@@ -391,12 +434,20 @@ function DynamicFieldCard({
           {hint ? <p className="field-hint">{hint}</p> : null}
         </div>
         <div className="field-card-tags">
-          <span className={filled ? "badge" : "badge badge-muted"}>{filled ? field.status : "lacuna"}</span>
+          <span className={filled ? "badge" : "badge badge-muted"}>
+            {munProg ? `${munProg.filled}/${munProg.total}` : filled ? field.status : "lacuna"}
+          </span>
           {saved ? <span className="badge">salvo</span> : null}
         </div>
       </header>
 
-      {type === "contact" ? (
+      {type === "municipio_blocks" ? (
+        <MunicipalityBlocksField
+          value={field.value}
+          defaultUf={defaultUf || "AP"}
+          onCommit={(blocks) => void onSave(blocks)}
+        />
+      ) : type === "contact" ? (
         <ContactFields
           value={(typeof field.value === "object" && field.value && !Array.isArray(field.value)
             ? field.value

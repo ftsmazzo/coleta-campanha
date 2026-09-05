@@ -637,6 +637,118 @@ select {
   margin-top: 0.35rem;
 }
 
+.mun-field {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.mun-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: start;
+}
+
+.mun-toolbar-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  max-width: 52ch;
+}
+
+.mun-bar {
+  margin-bottom: 0.15rem;
+}
+
+.mun-add {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .mun-add {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mun-add input {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 0.55rem;
+  padding: 0.7rem 0.8rem;
+}
+
+.mun-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.mun-card {
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: #fff;
+  overflow: hidden;
+}
+
+.mun-card.is-empty {
+  border-left: 3px solid var(--signal);
+}
+
+.mun-card.is-filled {
+  border-left: 3px solid var(--accent);
+}
+
+.mun-card-head {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.8rem 0.9rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--ink);
+}
+
+.mun-card-head strong {
+  display: block;
+}
+
+.mun-card-head span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.mun-card-head em {
+  font-style: normal;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.mun-card-body {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0 0.9rem 0.95rem;
+  border-top: 1px solid var(--line);
+  padding-top: 0.85rem;
+}
+
+.mun-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.88rem;
+}
+
+.mun-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .sessao-list {
   display: grid;
   gap: 0.65rem;
