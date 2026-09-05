@@ -17,6 +17,8 @@ import type {
   SchemaField,
 } from "@/lib/schema-types";
 
+export type ShareMode = "jornada" | "escolha";
+
 export type JourneyStep = {
   id: string;
   kind: "field" | "municipio";
@@ -32,6 +34,10 @@ export type JourneyStep = {
   municipioId?: string;
   municipioNome?: string;
 };
+
+export function fieldScopeKey(sectionKey: string, fieldKey: string) {
+  return `${sectionKey}.${fieldKey}`;
+}
 
 export function questionForField(field: SchemaField): string {
   if (field.question?.trim()) return field.question.trim();
@@ -59,7 +65,6 @@ export function questionForField(field: SchemaField): string {
 /** Campo já respondido no onboarding geral — coleta indireta não pode alterar. */
 export function isFieldLockedForIndirect(value: FieldAnswerView["value"], type: FieldType): boolean {
   if (type === "municipio_blocks") {
-    // Bloqueio parcial: só municípios preenchidos ficam travados (tratado nos steps).
     return false;
   }
   return isFilled(value);
@@ -68,11 +73,16 @@ export function isFieldLockedForIndirect(value: FieldAnswerView["value"], type: 
 export function buildOpenJourneySteps(
   schema: DocumentSchema,
   fields: FieldAnswerView[],
+  scopeKeys?: string[] | null,
 ): JourneyStep[] {
   const steps: JourneyStep[] = [];
+  const scope = scopeKeys?.length ? new Set(scopeKeys) : null;
 
   for (const section of schema.sections) {
     for (const field of section.fields) {
+      const key = fieldScopeKey(section.key, field.key);
+      if (scope && !scope.has(key)) continue;
+
       const answer = fields.find((f) => f.sectionKey === section.key && f.fieldKey === field.key);
       if (!answer) continue;
 
@@ -118,6 +128,20 @@ export function buildOpenJourneySteps(
   return steps;
 }
 
+export function listSelectableFields(schema: DocumentSchema) {
+  return schema.sections.flatMap((section) =>
+    section.fields.map((field) => ({
+      key: fieldScopeKey(section.key, field.key),
+      sectionKey: section.key,
+      sectionTitle: section.title,
+      fieldKey: field.key,
+      label: field.label,
+      question: questionForField(field),
+      type: field.type,
+    })),
+  );
+}
+
 export async function ensureShareToken(collectionId: string): Promise<string> {
   const [row] = await db.select().from(collections).where(eq(collections.id, collectionId)).limit(1);
   if (!row) throw new Error("Sessão não encontrada.");
@@ -131,9 +155,24 @@ export async function ensureShareToken(collectionId: string): Promise<string> {
   return token;
 }
 
+export function newShareToken() {
+  return randomBytes(18).toString("base64url");
+}
+
 export function publicShareUrl(token: string) {
   const base = (process.env.APP_URL || "").replace(/\/$/, "") || "";
   return base ? `${base}/r/${token}` : `/r/${token}`;
+}
+
+export function parseScopeJson(raw: string | null | undefined): string[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map(String).filter(Boolean);
+  } catch {
+    return null;
+  }
 }
 
 export function parseIndirectAnswer(opts: {

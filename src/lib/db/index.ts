@@ -120,8 +120,19 @@ const DDL_MIGRATE = `
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS share_links (
+    id TEXT PRIMARY KEY,
+    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'jornada',
+    scope_json TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
   CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_share_token ON collections(share_token) WHERE share_token IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_field_attachments_field ON field_attachments(field_answer_id);
+  CREATE INDEX IF NOT EXISTS idx_share_links_collection ON share_links(collection_id);
 `;
 
 let migrated: Promise<void> | null = null;

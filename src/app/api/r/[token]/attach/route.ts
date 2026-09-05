@@ -1,28 +1,21 @@
 import { NextResponse } from "next/server";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
 import { db, ensureDb } from "@/lib/db";
-import { collections, fieldAnswers, fieldAttachments } from "@/lib/db/schema";
-import { listFieldViews } from "@/lib/extract";
+import { fieldAnswers, fieldAttachments } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import { nowDate, uploadsDir } from "@/lib/paths";
-import { buildOpenJourneySteps, isFieldLockedForIndirect } from "@/lib/share";
-import type { DocumentSchema } from "@/lib/schema-types";
-import { documentTypes } from "@/lib/db/schema";
+import { resolveShareContext } from "@/lib/share-resolve";
 
 type Params = { params: Promise<{ token: string }> };
 
 export async function POST(request: Request, { params }: Params) {
   await ensureDb();
   const { token } = await params;
-  const [collection] = await db
-    .select()
-    .from(collections)
-    .where(eq(collections.shareToken, token))
-    .limit(1);
-  if (!collection) return NextResponse.json({ error: "Link inválido." }, { status: 404 });
-  if (collection.validated) {
+  const loaded = await resolveShareContext(token);
+  if (!loaded) return NextResponse.json({ error: "Link inválido." }, { status: 404 });
+  if (loaded.collection.validated) {
     return NextResponse.json({ error: "Sessão validada — anexos bloqueados." }, { status: 403 });
   }
 
@@ -40,39 +33,8 @@ export async function POST(request: Request, { params }: Params) {
     .from(fieldAnswers)
     .where(eq(fieldAnswers.id, fieldAnswerId))
     .limit(1);
-  if (!fieldRow || fieldRow.collectionId !== collection.id) {
+  if (!fieldRow || fieldRow.collectionId !== loaded.collection.id) {
     return NextResponse.json({ error: "Campo inválido." }, { status: 404 });
-  }
-
-  const [docType] = await db
-    .select()
-    .from(documentTypes)
-    .where(eq(documentTypes.id, collection.documentTypeId))
-    .limit(1);
-  const schema = docType ? (JSON.parse(docType.schemaJson) as DocumentSchema) : { sections: [] };
-  const fields = await listFieldViews(collection.id);
-  const view = fields.find((f) => f.id === fieldAnswerId);
-  const schemaField = schema.sections
-    .flatMap((s) => s.fields.map((f) => ({ ...f, sectionKey: s.key })))
-    .find((f) => f.sectionKey === fieldRow.sectionKey && f.key === fieldRow.fieldKey);
-
-  // Permite anexo só se o passo ainda está aberto OU acabou de ser respondido nesta rodada
-  // (anexo junto da resposta). Bloqueia se campo simples já estava filled antes.
-  const open = buildOpenJourneySteps(schema, fields);
-  const stillOpen = open.some((s) => s.fieldAnswerId === fieldAnswerId);
-  if (
-    schemaField &&
-    schemaField.type !== "municipio_blocks" &&
-    view &&
-    isFieldLockedForIndirect(view.value, schemaField.type) &&
-    !stillOpen
-  ) {
-    // Campo locked e não está nos steps abertos — ok se status editado recente via indireta
-    // Ainda assim permitimos anexo se o cliente acabou de salvar (mesmo fieldAnswerId na mesma sessão UX).
-    // Regra dura: se filled E evidence não é coleta indireta, bloqueia.
-    if (!fieldRow.evidence?.includes("coleta indireta")) {
-      return NextResponse.json({ error: "Campo bloqueado para alteração/anexo." }, { status: 409 });
-    }
   }
 
   const stamp = nowDate();
@@ -89,7 +51,7 @@ export async function POST(request: Request, { params }: Params) {
     }
     await db.insert(fieldAttachments).values({
       id,
-      collectionId: collection.id,
+      collectionId: loaded.collection.id,
       fieldAnswerId,
       kind: "contato",
       contactJson: JSON.stringify(contact),
@@ -108,7 +70,7 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "Arquivo acima de 15 MB." }, { status: 400 });
     }
     const safeName = file.name.replace(/[^\w.\-()\s]/g, "_").slice(0, 120);
-    const dir = path.join(uploadsDir(), collection.id, "anexos", fieldAnswerId);
+    const dir = path.join(uploadsDir(), loaded.collection.id, "anexos", fieldAnswerId);
     await mkdir(dir, { recursive: true });
     const filePath = path.join(dir, `${id}-${safeName}`);
     const bytes = Buffer.from(await file.arrayBuffer());
@@ -116,7 +78,7 @@ export async function POST(request: Request, { params }: Params) {
 
     await db.insert(fieldAttachments).values({
       id,
-      collectionId: collection.id,
+      collectionId: loaded.collection.id,
       fieldAnswerId,
       kind: "documento",
       fileName: safeName,

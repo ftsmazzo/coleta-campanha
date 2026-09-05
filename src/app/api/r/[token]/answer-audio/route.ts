@@ -3,32 +3,30 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { eq } from "drizzle-orm";
 import { v4 as uuid } from "uuid";
+import { openRouterConfigured, openRouterTranscribe } from "@/lib/ai/openrouter";
 import { db, ensureDb } from "@/lib/db";
-import { collections, documentTypes, fieldAnswers, fieldAttachments } from "@/lib/db/schema";
+import { collections, fieldAnswers, fieldAttachments } from "@/lib/db/schema";
 import { listFieldViews } from "@/lib/extract";
 import { isFilled } from "@/lib/field-utils";
 import { nowDate, uploadsDir } from "@/lib/paths";
-import type { DocumentSchema, FieldType } from "@/lib/schema-types";
+import type { FieldType } from "@/lib/schema-types";
+import { resolveShareContext } from "@/lib/share-resolve";
 import {
   buildOpenJourneySteps,
   isFieldLockedForIndirect,
   mergeMunicipioPatch,
   parseIndirectAnswer,
 } from "@/lib/share";
-import { openRouterConfigured, openRouterTranscribe } from "@/lib/ai/openrouter";
 
 type Params = { params: Promise<{ token: string }> };
 
-/** Resposta por áudio na jornada: STT → grava no campo (se ainda aberto). */
 export async function POST(request: Request, { params }: Params) {
   await ensureDb();
   const { token } = await params;
-  const [collection] = await db
-    .select()
-    .from(collections)
-    .where(eq(collections.shareToken, token))
-    .limit(1);
-  if (!collection) return NextResponse.json({ error: "Link inválido." }, { status: 404 });
+  const loaded = await resolveShareContext(token);
+  if (!loaded) return NextResponse.json({ error: "Link inválido." }, { status: 404 });
+
+  const { collection, schema, fields, scope } = loaded;
   if (collection.validated) {
     return NextResponse.json({ error: "Sessão validada — link bloqueado." }, { status: 403 });
   }
@@ -44,19 +42,11 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Envie o áudio." }, { status: 400 });
   }
 
-  const [docType] = await db
-    .select()
-    .from(documentTypes)
-    .where(eq(documentTypes.id, collection.documentTypeId))
-    .limit(1);
-  if (!docType) return NextResponse.json({ error: "Tipo ausente." }, { status: 404 });
-  const schema = JSON.parse(docType.schemaJson) as DocumentSchema;
-  const fields = await listFieldViews(collection.id);
-  const steps = buildOpenJourneySteps(schema, fields);
+  const steps = buildOpenJourneySteps(schema, fields, scope);
   const step = steps.find((s) => s.id === stepId);
   if (!step) {
     return NextResponse.json(
-      { error: "Esta pergunta já foi respondida ou não está disponível." },
+      { error: "Esta pergunta já foi respondida ou não está disponível neste link." },
       { status: 409 },
     );
   }
@@ -111,7 +101,6 @@ export async function POST(request: Request, { params }: Params) {
     })
     .where(eq(fieldAnswers.id, step.fieldAnswerId));
 
-  // Guarda o áudio original como anexo
   const attachId = uuid();
   const dir = path.join(uploadsDir(), collection.id, "anexos", step.fieldAnswerId);
   await mkdir(dir, { recursive: true });
@@ -137,7 +126,7 @@ export async function POST(request: Request, { params }: Params) {
     .where(eq(collections.id, collection.id));
 
   const refreshed = await listFieldViews(collection.id);
-  const openSteps = buildOpenJourneySteps(schema, refreshed);
+  const openSteps = buildOpenJourneySteps(schema, refreshed, scope);
 
   return NextResponse.json({
     ok: true,

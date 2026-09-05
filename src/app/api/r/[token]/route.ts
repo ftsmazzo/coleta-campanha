@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, ensureDb } from "@/lib/db";
-import { campaigns, collections, documentTypes, fieldAnswers } from "@/lib/db/schema";
-import { ensureFieldRows, listFieldViews } from "@/lib/extract";
+import { collections, fieldAnswers } from "@/lib/db/schema";
+import { listFieldViews } from "@/lib/extract";
 import { isFilled } from "@/lib/field-utils";
 import { nowDate } from "@/lib/paths";
 import { computeCollectionProgress } from "@/lib/progress";
-import type { DocumentSchema, FieldType } from "@/lib/schema-types";
+import type { FieldType } from "@/lib/schema-types";
+import { resolveShareContext } from "@/lib/share-resolve";
 import {
   buildOpenJourneySteps,
   isFieldLockedForIndirect,
@@ -16,40 +17,13 @@ import {
 
 type Params = { params: Promise<{ token: string }> };
 
-async function loadByToken(token: string) {
-  await ensureDb();
-  const [collection] = await db
-    .select()
-    .from(collections)
-    .where(eq(collections.shareToken, token))
-    .limit(1);
-  if (!collection) return null;
-
-  const [docType] = await db
-    .select()
-    .from(documentTypes)
-    .where(eq(documentTypes.id, collection.documentTypeId))
-    .limit(1);
-  if (!docType) return null;
-
-  const [campaign] = await db
-    .select()
-    .from(campaigns)
-    .where(eq(campaigns.id, collection.campaignId))
-    .limit(1);
-
-  const schema = JSON.parse(docType.schemaJson) as DocumentSchema;
-  await ensureFieldRows(collection.id, schema);
-  const fields = await listFieldViews(collection.id);
-  return { collection, docType, campaign, schema, fields };
-}
-
 export async function GET(_request: Request, { params }: Params) {
+  await ensureDb();
   const { token } = await params;
-  const loaded = await loadByToken(token);
+  const loaded = await resolveShareContext(token);
   if (!loaded) return NextResponse.json({ error: "Link inválido ou expirado." }, { status: 404 });
 
-  const { collection, campaign, schema, fields } = loaded;
+  const { collection, campaign, schema, fields, mode, scope, linkTitle } = loaded;
   if (collection.validated) {
     return NextResponse.json({
       closed: true,
@@ -58,12 +32,14 @@ export async function GET(_request: Request, { params }: Params) {
     });
   }
 
-  const steps = buildOpenJourneySteps(schema, fields);
+  const steps = buildOpenJourneySteps(schema, fields, scope);
   const progress = computeCollectionProgress(schema, fields);
 
   return NextResponse.json({
     closed: false,
     title: collection.title,
+    linkTitle,
+    mode,
     campaignName: campaign ? `${campaign.name} · ${campaign.state} ${campaign.year}` : null,
     progress,
     openCount: steps.length,
@@ -72,11 +48,12 @@ export async function GET(_request: Request, { params }: Params) {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  await ensureDb();
   const { token } = await params;
-  const loaded = await loadByToken(token);
+  const loaded = await resolveShareContext(token);
   if (!loaded) return NextResponse.json({ error: "Link inválido ou expirado." }, { status: 404 });
 
-  const { collection, schema, fields } = loaded;
+  const { collection, schema, fields, scope } = loaded;
   if (collection.validated) {
     return NextResponse.json({ error: "Sessão validada — link bloqueado." }, { status: 403 });
   }
@@ -85,20 +62,16 @@ export async function POST(request: Request, { params }: Params) {
   const stepId = String(body.stepId || "");
   const respondent = String(body.respondentName || "").trim().slice(0, 120) || null;
 
-  const steps = buildOpenJourneySteps(schema, fields);
+  const steps = buildOpenJourneySteps(schema, fields, scope);
   const step = steps.find((s) => s.id === stepId);
   if (!step) {
     return NextResponse.json(
-      { error: "Esta pergunta já foi respondida por outra pessoa ou não está disponível." },
+      { error: "Esta pergunta já foi respondida por outra pessoa ou não está disponível neste link." },
       { status: 409 },
     );
   }
 
-  const [row] = await db.select().from(fieldAnswers).where(eq(fieldAnswers.id, step.fieldAnswerId)).limit(1);
-  if (!row) return NextResponse.json({ error: "Campo não encontrado." }, { status: 404 });
-
-  const currentFields = await listFieldViews(collection.id);
-  const current = currentFields.find((f) => f.id === step.fieldAnswerId);
+  const current = fields.find((f) => f.id === step.fieldAnswerId);
   if (!current) return NextResponse.json({ error: "Campo não encontrado." }, { status: 404 });
 
   if (step.kind === "field" && isFieldLockedForIndirect(current.value, step.type)) {
@@ -155,7 +128,7 @@ export async function POST(request: Request, { params }: Params) {
     .where(eq(collections.id, collection.id));
 
   const refreshed = await listFieldViews(collection.id);
-  const openSteps = buildOpenJourneySteps(schema, refreshed);
+  const openSteps = buildOpenJourneySteps(schema, refreshed, scope);
   const progress = computeCollectionProgress(schema, refreshed);
 
   return NextResponse.json({

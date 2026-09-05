@@ -21,12 +21,16 @@ export function IndirectJourney({ token }: Props) {
   const [closed, setClosed] = useState(false);
   const [closedMsg, setClosedMsg] = useState("");
   const [title, setTitle] = useState("");
+  const [linkTitle, setLinkTitle] = useState<string | null>(null);
+  const [shareMode, setShareMode] = useState<"jornada" | "escolha">("jornada");
   const [campaignName, setCampaignName] = useState<string | null>(null);
   const [steps, setSteps] = useState<JourneyStep[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [respondentName, setRespondentName] = useState("");
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<AnswerMode>("texto");
+  /** No modo escolha: pergunta selecionada na lista. */
+  const [pickedId, setPickedId] = useState<string | null>(null);
 
   const [text, setText] = useState("");
   const [boolVal, setBoolVal] = useState<boolean | null>(null);
@@ -47,7 +51,11 @@ export function IndirectJourney({ token }: Props) {
   const timerRef = useRef<number | null>(null);
   const startedAtRef = useRef(0);
 
-  const step = steps[0] ?? null;
+  const step =
+    shareMode === "escolha"
+      ? steps.find((s) => s.id === pickedId) ?? null
+      : steps[0] ?? null;
+  const showPicker = shareMode === "escolha" && !step && steps.length > 0;
   const done = !loading && !closed && !error && steps.length === 0;
   const totalOpen = steps.length;
 
@@ -68,9 +76,12 @@ export function IndirectJourney({ token }: Props) {
       return;
     }
     setTitle(data.title || "");
+    setLinkTitle(data.linkTitle || null);
+    setShareMode(data.mode === "escolha" ? "escolha" : "jornada");
     setCampaignName(data.campaignName || null);
     setSteps(data.steps || []);
     setProgress(data.progress || null);
+    setPickedId(null);
     resetAnswer();
   }, [token]);
 
@@ -176,6 +187,7 @@ export function IndirectJourney({ token }: Props) {
         }
         setSteps(data.steps || []);
         setProgress(data.progress || null);
+        setPickedId(null);
         resetAnswer();
         setPending(false);
         return;
@@ -226,6 +238,7 @@ export function IndirectJourney({ token }: Props) {
 
         setSteps(data.steps || []);
         setProgress(data.progress || null);
+        setPickedId(null);
         resetAnswer();
         setPending(false);
         return;
@@ -281,6 +294,7 @@ export function IndirectJourney({ token }: Props) {
       }
       setSteps(data.steps || []);
       setProgress(data.progress || null);
+      setPickedId(null);
       resetAnswer();
       setPending(false);
     } catch {
@@ -330,8 +344,11 @@ export function IndirectJourney({ token }: Props) {
   return (
     <div className="journey-shell">
       <header className="journey-top">
-        <p className="badge badge-muted">jornada</p>
-        <h1 className="display journey-title">{title}</h1>
+        <p className="badge badge-muted">
+          {shareMode === "escolha" ? "escolha a pergunta" : "jornada"}
+        </p>
+        <h1 className="display journey-title">{linkTitle || title}</h1>
+        {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
         {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
         <div className="journey-bar">
           <div className="mini-bar">
@@ -354,8 +371,42 @@ export function IndirectJourney({ token }: Props) {
         />
       </div>
 
+      {showPicker ? (
+        <article className="journey-card panel">
+          <h2 className="display journey-question">Escolha a pergunta que você quer responder</h2>
+          <p className="journey-hint">Só aparecem as que ainda estão abertas neste link.</p>
+          <div className="share-scope-list">
+            {steps.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="share-pick-item"
+                onClick={() => {
+                  setPickedId(s.id);
+                  resetAnswer();
+                  setError(null);
+                }}
+              >
+                <strong>{s.sectionTitle}</strong>
+                <span>{s.question}</span>
+              </button>
+            ))}
+          </div>
+        </article>
+      ) : null}
+
       {step ? (
         <article className="journey-card panel">
+          {shareMode === "escolha" ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ justifySelf: "start" }}
+              onClick={() => setPickedId(null)}
+            >
+              ← Voltar à lista
+            </button>
+          ) : null}
           <p className="journey-section">{step.sectionTitle}</p>
           <h2 className="display journey-question">{step.question}</h2>
 

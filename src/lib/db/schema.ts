@@ -55,10 +55,27 @@ export const collections = pgTable("collections", {
   errorMessage: text("error_message"),
   validated: boolean("validated").notNull().default(false),
   validatedAt: timestamp("validated_at", { withTimezone: true }),
-  /** Token público para coleta indireta (Typeform / link compartilhado). */
+  /** Token público legado (um link default). Preferir share_links para múltiplos. */
   shareToken: text("share_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Links de coleta indireta — um por situação (escopo + modo).
+ * mode: jornada (sequencial) | escolha (pessoa escolhe a pergunta).
+ */
+export const shareLinks = pgTable("share_links", {
+  id: text("id").primaryKey(),
+  collectionId: text("collection_id")
+    .notNull()
+    .references(() => collections.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  title: text("title").notNull(),
+  mode: text("mode").notNull().default("jornada"),
+  /** JSON: string[] de "sectionKey.fieldKey". Vazio/null = todas as abertas. */
+  scopeJson: text("scope_json"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 /**
