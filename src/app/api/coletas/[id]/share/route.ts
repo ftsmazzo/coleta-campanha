@@ -11,6 +11,7 @@ import {
   listSelectableFields,
   newShareToken,
   parseScopeJson,
+  publicAppBaseUrl,
   publicShareUrl,
   type ShareMode,
 } from "@/lib/share";
@@ -47,6 +48,7 @@ export async function GET(_request: Request, { params }: Params) {
     openCount: openSteps.length,
     progress,
     selectable,
+    baseUrl: publicAppBaseUrl(),
     links: links.map((l) => ({
       id: l.id,
       title: l.title,

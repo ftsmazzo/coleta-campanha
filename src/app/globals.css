@@ -779,6 +779,10 @@ select {
   padding: 1.25rem 1rem 3rem;
 }
 
+.main-public:has(.journey-shell-split) {
+  max-width: 1080px;
+}
+
 .journey-page {
   min-height: 70vh;
 }
@@ -786,6 +790,49 @@ select {
 .journey-shell {
   display: grid;
   gap: 1rem;
+}
+
+.journey-split {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 880px) {
+  .journey-split {
+    grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+    gap: 1.15rem;
+  }
+}
+
+.journey-sidebar {
+  display: grid;
+  gap: 0.65rem;
+  padding: 1rem;
+  position: sticky;
+  top: 0.75rem;
+}
+
+.journey-sidebar-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.journey-sidebar-list {
+  display: grid;
+  gap: 0.4rem;
+  max-height: min(70vh, 560px);
+  overflow: auto;
+}
+
+.journey-main {
+  min-width: 0;
+}
+
+.share-pick-item.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, #fff);
 }
 
 .journey-top {

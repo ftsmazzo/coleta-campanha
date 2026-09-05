@@ -12,7 +12,7 @@
 
 | Serviço | Tipo | URL |
 |---------|------|-----|
-| `coleta-app` | App (GitHub `ftsmazzo/coleta-campanha`) | https://coleta-campanha-app.se860g.easypanel.host |
+| `coleta-app` | App (GitHub `ftsmazzo/coleta-campanha`) | https://polititech.ieleitoral.com.br (oficial) · https://coleta-campanha-app.se860g.easypanel.host |
 | `coleta-n8n` | Image `n8nio/n8n` | https://coleta-campanha-n8n.se860g.easypanel.host |
 | `coleta-postgres` | PostgreSQL 16 | interno `coleta-postgres:5432` / DB `coleta` |
 

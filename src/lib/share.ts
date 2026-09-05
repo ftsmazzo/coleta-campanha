@@ -160,8 +160,12 @@ export function newShareToken() {
 }
 
 export function publicShareUrl(token: string) {
-  const base = (process.env.APP_URL || "").replace(/\/$/, "") || "";
+  const base = publicAppBaseUrl();
   return base ? `${base}/r/${token}` : `/r/${token}`;
+}
+
+export function publicAppBaseUrl() {
+  return (process.env.APP_URL || "").replace(/\/$/, "");
 }
 
 export function parseScopeJson(raw: string | null | undefined): string[] | null {

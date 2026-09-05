@@ -92,12 +92,22 @@ export function IndirectJourney({ token }: Props) {
     shareMode === "escolha"
       ? openSteps.find((s) => s.id === pickedId) ?? null
       : openSteps[0] ?? null;
-  const showPicker = shareMode === "escolha" && !step && openSteps.length > 0;
+  const showEscolhaLayout = shareMode === "escolha" && openSteps.length > 0;
+  const openStepIds = openSteps.map((s) => s.id).join("|");
   const allCaughtUp =
     !loading && !closed && !error && introDone && openSteps.length === 0 && steps.length === 0;
   const onlySkippedLeft =
     !loading && !closed && !error && introDone && openSteps.length === 0 && steps.length > 0;
   const totalOpen = openSteps.length;
+
+  useEffect(() => {
+    if (shareMode !== "escolha") return;
+    const first = openStepIds ? openStepIds.split("|")[0] : null;
+    if (!pickedId && first) setPickedId(first);
+    else if (pickedId && first && !openStepIds.split("|").includes(pickedId)) setPickedId(first);
+    else if (pickedId && !first) setPickedId(null);
+  }, [shareMode, openStepIds, pickedId]);
+
 
   function skipCurrent() {
     if (!step) return;
@@ -458,66 +468,8 @@ export function IndirectJourney({ token }: Props) {
     );
   }
 
-  return (
-    <div className="journey-shell">
-      <header className="journey-top">
-        <p className="badge badge-muted">
-          {shareMode === "escolha" ? "escolha a pergunta" : "jornada"}
-        </p>
-        <h1 className="display journey-title">{linkTitle || title}</h1>
-        {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
-        {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
-        {respondentName.trim() ? (
-          <p className="journey-meta">Respondendo como {respondentName.trim()}</p>
-        ) : null}
-        <div className="journey-bar">
-          <div className="mini-bar">
-            <i style={{ width: `${progress?.percent ?? 0}%` }} />
-          </div>
-          <span>
-            {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} pra você · sessão {progress?.percent ?? 0}%
-          </span>
-        </div>
-      </header>
-
-      {showPicker ? (
+  const questionCard = step ? (
         <article className="journey-card panel">
-          <h2 className="display journey-question">Escolha a pergunta que você quer responder</h2>
-          <p className="journey-hint">
-            Só as abertas neste link. Se não for com você, não precisa abrir — ou abra e use Pular.
-          </p>
-          <div className="share-scope-list">
-            {openSteps.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className="share-pick-item"
-                onClick={() => {
-                  setPickedId(s.id);
-                  resetAnswer();
-                  setError(null);
-                }}
-              >
-                <strong>{s.sectionTitle}</strong>
-                <span>{s.question}</span>
-              </button>
-            ))}
-          </div>
-        </article>
-      ) : null}
-
-      {step ? (
-        <article className="journey-card panel">
-          {shareMode === "escolha" ? (
-            <button
-              type="button"
-              className="btn btn-secondary"
-              style={{ justifySelf: "start" }}
-              onClick={() => setPickedId(null)}
-            >
-              ← Voltar à lista
-            </button>
-          ) : null}
           <p className="journey-section">{step.sectionTitle}</p>
           <h2 className="display journey-question">{step.question}</h2>
 
@@ -689,7 +641,60 @@ export function IndirectJourney({ token }: Props) {
             para todos.
           </p>
         </article>
-      ) : null}
+      ) : null;
+
+  return (
+    <div className={`journey-shell ${showEscolhaLayout ? "journey-shell-split" : ""}`}>
+      <header className="journey-top">
+        <p className="badge badge-muted">
+          {shareMode === "escolha" ? "escolha a pergunta" : "jornada"}
+        </p>
+        <h1 className="display journey-title">{linkTitle || title}</h1>
+        {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
+        {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
+        {respondentName.trim() ? (
+          <p className="journey-meta">Respondendo como {respondentName.trim()}</p>
+        ) : null}
+        <div className="journey-bar">
+          <div className="mini-bar">
+            <i style={{ width: `${progress?.percent ?? 0}%` }} />
+          </div>
+          <span>
+            {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} pra você · sessão {progress?.percent ?? 0}%
+          </span>
+        </div>
+      </header>
+
+      {showEscolhaLayout ? (
+        <div className="journey-split">
+          <aside className="journey-sidebar panel">
+            <h2 className="journey-sidebar-title">Perguntas abertas</h2>
+            <p className="journey-hint">
+              Clique na lista para responder. Se não for com você, use Pular no painel.
+            </p>
+            <div className="journey-sidebar-list">
+              {openSteps.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`share-pick-item ${pickedId === s.id ? "is-active" : ""}`}
+                  onClick={() => {
+                    setPickedId(s.id);
+                    resetAnswer();
+                    setError(null);
+                  }}
+                >
+                  <strong>{s.sectionTitle}</strong>
+                  <span>{s.question}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+          <div className="journey-main">{questionCard}</div>
+        </div>
+      ) : (
+        questionCard
+      )}
     </div>
   );
 }

@@ -34,11 +34,13 @@ export function ShareLinkCard({ collectionId }: Props) {
   const [mode, setMode] = useState<"jornada" | "escolha">("jornada");
   const [selected, setSelected] = useState<string[]>([]);
   const [filterSection, setFilterSection] = useState<string>("");
+  const [baseUrl, setBaseUrl] = useState("");
 
   function absoluteUrl(pathOrUrl: string) {
     if (pathOrUrl.startsWith("http")) return pathOrUrl;
-    if (typeof window === "undefined") return pathOrUrl;
-    return `${window.location.origin}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
+    const origin = baseUrl || (typeof window !== "undefined" ? window.location.origin : "");
+    if (!origin) return pathOrUrl;
+    return `${origin}${pathOrUrl.startsWith("/") ? "" : "/"}${pathOrUrl}`;
   }
 
   async function refresh() {
@@ -48,6 +50,7 @@ export function ShareLinkCard({ collectionId }: Props) {
     setLinks(data.links || []);
     setSelectable(data.selectable || []);
     setOpenCount(data.openCount ?? null);
+    if (data.baseUrl) setBaseUrl(String(data.baseUrl).replace(/\/$/, ""));
   }
 
   useEffect(() => {
