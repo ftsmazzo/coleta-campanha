@@ -27,10 +27,46 @@ export function IndirectJourney({ token }: Props) {
   const [steps, setSteps] = useState<JourneyStep[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [respondentName, setRespondentName] = useState("");
+  const [introDone, setIntroDone] = useState(false);
   const [pending, setPending] = useState(false);
   const [mode, setMode] = useState<AnswerMode>("texto");
   /** No modo escolha: pergunta selecionada na lista. */
   const [pickedId, setPickedId] = useState<string | null>(null);
+  /** Puladas só nesta pessoa/navegador — não trava para os outros. */
+  const [skippedIds, setSkippedIds] = useState<string[]>([]);
+
+  const storageKey = `coleta-r:${token}`;
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { name?: string; introDone?: boolean; skipped?: string[] };
+      if (parsed.name) setRespondentName(parsed.name);
+      if (parsed.introDone) setIntroDone(true);
+      if (Array.isArray(parsed.skipped)) setSkippedIds(parsed.skipped);
+    } catch {
+      // ignore
+    }
+  }, [storageKey]);
+
+  function persistSession(patch: { name?: string; introDone?: boolean; skipped?: string[] }) {
+    try {
+      const prev = sessionStorage.getItem(storageKey);
+      const base = prev ? (JSON.parse(prev) as Record<string, unknown>) : {};
+      sessionStorage.setItem(
+        storageKey,
+        JSON.stringify({
+          ...base,
+          name: patch.name ?? respondentName,
+          introDone: patch.introDone ?? introDone,
+          skipped: patch.skipped ?? skippedIds,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }
 
   const [text, setText] = useState("");
   const [boolVal, setBoolVal] = useState<boolean | null>(null);
@@ -51,13 +87,32 @@ export function IndirectJourney({ token }: Props) {
   const timerRef = useRef<number | null>(null);
   const startedAtRef = useRef(0);
 
+  const openSteps = steps.filter((s) => !skippedIds.includes(s.id));
   const step =
     shareMode === "escolha"
-      ? steps.find((s) => s.id === pickedId) ?? null
-      : steps[0] ?? null;
-  const showPicker = shareMode === "escolha" && !step && steps.length > 0;
-  const done = !loading && !closed && !error && steps.length === 0;
-  const totalOpen = steps.length;
+      ? openSteps.find((s) => s.id === pickedId) ?? null
+      : openSteps[0] ?? null;
+  const showPicker = shareMode === "escolha" && !step && openSteps.length > 0;
+  const allCaughtUp =
+    !loading && !closed && !error && introDone && openSteps.length === 0 && steps.length === 0;
+  const onlySkippedLeft =
+    !loading && !closed && !error && introDone && openSteps.length === 0 && steps.length > 0;
+  const totalOpen = openSteps.length;
+
+  function skipCurrent() {
+    if (!step) return;
+    const next = [...skippedIds, step.id];
+    setSkippedIds(next);
+    persistSession({ skipped: next });
+    setPickedId(null);
+    resetAnswer();
+    setError(null);
+  }
+
+  function startIntro() {
+    setIntroDone(true);
+    persistSession({ name: respondentName.trim(), introDone: true });
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -190,6 +245,8 @@ export function IndirectJourney({ token }: Props) {
         setPickedId(null);
         resetAnswer();
         setPending(false);
+        // Atualiza o que outros já fecharam
+        void load();
         return;
       }
 
@@ -241,6 +298,7 @@ export function IndirectJourney({ token }: Props) {
         setPickedId(null);
         resetAnswer();
         setPending(false);
+        void load();
         return;
       }
 
@@ -297,6 +355,7 @@ export function IndirectJourney({ token }: Props) {
       setPickedId(null);
       resetAnswer();
       setPending(false);
+      void load();
     } catch {
       setPending(false);
       setError("Erro de rede. Tente de novo.");
@@ -307,7 +366,7 @@ export function IndirectJourney({ token }: Props) {
     return <div className="journey-shell panel">Carregando jornada…</div>;
   }
 
-  if (error && !step && !done) {
+  if (error && !step && !allCaughtUp && !onlySkippedLeft && introDone) {
     return (
       <div className="journey-shell panel">
         <h1 className="display journey-title">Link indisponível</h1>
@@ -326,17 +385,75 @@ export function IndirectJourney({ token }: Props) {
     );
   }
 
-  if (done) {
+  if (!introDone && !loading && !error) {
+    return (
+      <div className="journey-shell">
+        <header className="journey-top">
+          <p className="badge badge-muted">começar</p>
+          <h1 className="display journey-title">{linkTitle || title}</h1>
+          {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
+        </header>
+        <article className="journey-card panel">
+          <h2 className="display journey-question">Antes de começar</h2>
+          <p className="journey-hint">
+            Seu nome aparece só uma vez. Nas perguntas você pode responder ou pular o que não for com você. O que
+            outra pessoa já preencheu fica fechado para todos.
+          </p>
+          <div className="field">
+            <label htmlFor="who">Seu nome</label>
+            <input
+              id="who"
+              value={respondentName}
+              onChange={(e) => setRespondentName(e.target.value)}
+              placeholder="Ex.: Ana — comunicação"
+              autoFocus
+            />
+          </div>
+          <div className="journey-actions journey-send">
+            <button type="button" className="btn btn-primary btn-lg" onClick={startIntro}>
+              Continuar
+            </button>
+          </div>
+        </article>
+      </div>
+    );
+  }
+
+  if (allCaughtUp) {
     return (
       <div className="journey-shell panel journey-done">
         <p className="badge">obrigado</p>
         <h1 className="display journey-title">Pronto por aqui</h1>
-        <p>Não há mais perguntas abertas neste link. O que já estava respondido ficou bloqueado.</p>
+        <p>Não há mais perguntas abertas neste link. O que já foi respondido ficou fechado para todos.</p>
         {progress ? (
           <p className="journey-meta">
             Sessão: {progress.filled}/{progress.total} · {progress.percent}%
           </p>
         ) : null}
+      </div>
+    );
+  }
+
+  if (onlySkippedLeft) {
+    return (
+      <div className="journey-shell panel journey-done">
+        <p className="badge">quase</p>
+        <h1 className="display journey-title">Você pulou o restante</h1>
+        <p>
+          As perguntas que você pulou continuam abertas para outras pessoas. Se quiser, pode revisitar as puladas.
+        </p>
+        <div className="journey-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              setSkippedIds([]);
+              persistSession({ skipped: [] });
+            }}
+          >
+            Ver perguntas que pulei
+          </button>
+        </div>
       </div>
     );
   }
@@ -350,33 +467,27 @@ export function IndirectJourney({ token }: Props) {
         <h1 className="display journey-title">{linkTitle || title}</h1>
         {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
         {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
+        {respondentName.trim() ? (
+          <p className="journey-meta">Respondendo como {respondentName.trim()}</p>
+        ) : null}
         <div className="journey-bar">
           <div className="mini-bar">
             <i style={{ width: `${progress?.percent ?? 0}%` }} />
           </div>
           <span>
-            {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} aberta{totalOpen === 1 ? "" : "s"} · sessão{" "}
-            {progress?.percent ?? 0}%
+            {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} pra você · sessão {progress?.percent ?? 0}%
           </span>
         </div>
       </header>
 
-      <div className="field journey-who">
-        <label htmlFor="who">Seu nome (opcional)</label>
-        <input
-          id="who"
-          value={respondentName}
-          onChange={(e) => setRespondentName(e.target.value)}
-          placeholder="Ex.: Ana — comunicação"
-        />
-      </div>
-
       {showPicker ? (
         <article className="journey-card panel">
           <h2 className="display journey-question">Escolha a pergunta que você quer responder</h2>
-          <p className="journey-hint">Só aparecem as que ainda estão abertas neste link.</p>
+          <p className="journey-hint">
+            Só as abertas neste link. Se não for com você, não precisa abrir — ou abra e use Pular.
+          </p>
           <div className="share-scope-list">
-            {steps.map((s) => (
+            {openSteps.map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -567,9 +678,16 @@ export function IndirectJourney({ token }: Props) {
 
           <div className="journey-actions journey-send">
             <button type="button" className="btn btn-primary btn-lg" disabled={pending} onClick={() => void send()}>
-              {pending ? "Enviando…" : "Enviar · próxima pergunta"}
+              {pending ? "Enviando…" : "Enviar · próxima"}
+            </button>
+            <button type="button" className="btn btn-secondary btn-lg" disabled={pending} onClick={skipCurrent}>
+              Pular · não é comigo
             </button>
           </div>
+          <p className="journey-hint">
+            Pular só tira da sua fila. A pergunta continua aberta para outra pessoa. Já respondidas ficam fechadas
+            para todos.
+          </p>
         </article>
       ) : null}
     </div>
