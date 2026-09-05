@@ -10,17 +10,24 @@ Destino futuro: módulo da **Inteligência Eleitoral** (`inteligencia-dados`). N
 - ffmpeg-static (split de áudio)
 - Claude opcional (`ANTHROPIC_API_KEY`) para schema a partir de texto e extração
 
-## Subir
+## Subir local
 
 ```bash
 cd coleta-campanha
 cp .env.example .env.local
+# configure DATABASE_URL (Postgres) e OPENROUTER_API_KEY
 npm install
 npm run db:seed
 npm run dev
 ```
 
 Abre em [http://localhost:3100](http://localhost:3100).
+
+## Produção
+
+- App: https://coleta-campanha-app.kxryyk.easypanel.host  
+- n8n: https://coleta-campanha-n8n.kxryyk.easypanel.host  
+- Detalhes: `infra/easypanel.md`
 
 ## O que já existe
 
