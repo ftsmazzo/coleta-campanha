@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #eef1ee;
+  --bg-elevated: #f7f9f6;
+  --ink: #12201a;
+  --ink-soft: #3d5248;
+  --line: #c9d4cc;
+  --accent: #1f6b4a;
+  --accent-deep: #0f3d2c;
+  --signal: #c98512;
+  --danger: #9b2c2c;
+  --ok: #1f6b4a;
+  --shadow: 0 18px 40px rgba(18, 32, 26, 0.08);
+}
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-sora);
+  --font-display: var(--font-fraunces);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sora), system-ui, sans-serif;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 0% 0%, rgba(31, 107, 74, 0.09), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 10%, rgba(201, 133, 18, 0.07), transparent 50%),
+    linear-gradient(180deg, #e8ece8 0%, var(--bg) 40%);
+  background-attachment: fixed;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.display {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-optical-sizing: auto;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+.rail {
+  border-right: 1px solid var(--line);
+  background: rgba(247, 249, 246, 0.82);
+  backdrop-filter: blur(10px);
+  padding: 1.5rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0 0.4rem;
+}
+
+.brand strong {
+  font-family: var(--font-fraunces), Georgia, serif;
+  font-size: 1.45rem;
+  letter-spacing: -0.02em;
+  color: var(--accent-deep);
+}
+
+.brand span {
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+  line-height: 1.35;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.nav a {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.55rem;
+  color: var(--ink-soft);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.nav a:hover,
+.nav a[data-active="true"] {
+  background: rgba(31, 107, 74, 0.1);
+  color: var(--accent-deep);
+}
+
+.main {
+  padding: 1.75rem clamp(1rem, 3vw, 2.4rem) 3rem;
+}
+
+.panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: none;
+  border-radius: 0.55rem;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #f7faf7;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+
+.field input,
+.field textarea,
+.field select {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 0.55rem;
+  padding: 0.7rem 0.8rem;
+  color: var(--ink);
+}
+
+.field textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: rgba(31, 107, 74, 0.12);
+  color: var(--accent-deep);
+}
+
+.badge-warn {
+  background: rgba(201, 133, 18, 0.16);
+  color: #7a5208;
+}
+
+.badge-muted {
+  background: rgba(61, 82, 72, 0.1);
+  color: var(--ink-soft);
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise {
+  animation: rise 420ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .btn:hover {
+    animation: none;
+    transform: none;
+  }
+}

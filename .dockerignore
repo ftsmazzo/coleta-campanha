@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+data/*.db
+data/uploads/**
+data/tmp/**
+!data/uploads/.gitkeep
+!data/tmp/.gitkeep
+.env
+.env*.local
+README.md
+*.md
