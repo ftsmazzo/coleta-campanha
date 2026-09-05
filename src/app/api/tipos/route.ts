@@ -33,10 +33,10 @@ export async function POST(request: Request) {
   const body = await request.json();
   const stamp = nowDate();
   const name = String(body.name ?? "").trim() || "Tipo sem nome";
-  const slug = String(body.slug ?? slugify(name) || `tipo_${Date.now()}`);
+  const slug = String(body.slug ?? (slugify(name) || `tipo_${Date.now()}`));
 
   let schemaJson: string;
-  let sourceText: string | null = body.sourceText ? String(body.sourceText) : null;
+  const sourceText: string | null = body.sourceText ? String(body.sourceText) : null;
   let engine: string | null = null;
 
   if (body.sourceText && !body.schema) {

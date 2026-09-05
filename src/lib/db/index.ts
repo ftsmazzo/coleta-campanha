@@ -2,27 +2,44 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "@/lib/db/schema";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL não configurada.");
+function getConnectionString() {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    throw new Error("DATABASE_URL não configurada.");
+  }
+  return connectionString;
 }
 
 const globalForDb = globalThis as unknown as {
   coletaSql?: ReturnType<typeof postgres>;
+  coletaDb?: ReturnType<typeof drizzle<typeof schema>>;
 };
 
-const sql =
-  globalForDb.coletaSql ??
-  postgres(connectionString, {
-    max: 5,
-    prepare: false,
-  });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForDb.coletaSql = sql;
+function getSql() {
+  if (!globalForDb.coletaSql) {
+    globalForDb.coletaSql = postgres(getConnectionString(), {
+      max: 5,
+      prepare: false,
+    });
+  }
+  return globalForDb.coletaSql;
 }
 
-export const db = drizzle(sql, { schema });
+function getDb() {
+  if (!globalForDb.coletaDb) {
+    globalForDb.coletaDb = drizzle(getSql(), { schema });
+  }
+  return globalForDb.coletaDb;
+}
+
+export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+  get(_target, prop, receiver) {
+    const real = getDb();
+    const value = Reflect.get(real, prop, receiver);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+});
+
 export type Db = typeof db;
 
 const DDL = `
@@ -91,7 +108,7 @@ let migrated: Promise<void> | null = null;
 export async function ensureDb() {
   if (!migrated) {
     migrated = (async () => {
-      await sql.unsafe(DDL);
+      await getSql().unsafe(DDL);
     })();
   }
   await migrated;

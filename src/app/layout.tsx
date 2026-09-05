@@ -3,6 +3,8 @@ import { Fraunces, Sora } from "next/font/google";
 import { AppShell } from "@/components/AppShell";
 import "./globals.css";
 
+export const dynamic = "force-dynamic";
+
 const sora = Sora({
   variable: "--font-sora",
   subsets: ["latin"],
