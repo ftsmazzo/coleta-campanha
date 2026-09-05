@@ -82,7 +82,6 @@ const DDL = `
     error_message TEXT,
     validated BOOLEAN NOT NULL DEFAULT FALSE,
     validated_at TIMESTAMPTZ,
-    share_token TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
@@ -100,6 +99,13 @@ const DDL = `
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
+  CREATE INDEX IF NOT EXISTS idx_collections_campaign ON collections(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_field_answers_collection ON field_answers(collection_id);
+`;
+
+const DDL_MIGRATE = `
+  ALTER TABLE collections ADD COLUMN IF NOT EXISTS share_token TEXT;
+
   CREATE TABLE IF NOT EXISTS field_attachments (
     id TEXT PRIMARY KEY,
     collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
@@ -114,8 +120,6 @@ const DDL = `
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
 
-  CREATE INDEX IF NOT EXISTS idx_collections_campaign ON collections(campaign_id);
-  CREATE INDEX IF NOT EXISTS idx_field_answers_collection ON field_answers(collection_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_collections_share_token ON collections(share_token) WHERE share_token IS NOT NULL;
   CREATE INDEX IF NOT EXISTS idx_field_attachments_field ON field_attachments(field_answer_id);
 `;
@@ -125,10 +129,10 @@ let migrated: Promise<void> | null = null;
 export async function ensureDb() {
   if (!migrated) {
     migrated = (async () => {
+      // Tabelas base primeiro (CREATE IF NOT EXISTS não altera schema antigo).
       await getSql().unsafe(DDL);
-      await getSql().unsafe(`
-        ALTER TABLE collections ADD COLUMN IF NOT EXISTS share_token TEXT;
-      `);
+      // Depois colunas/tabelas novas — senão índice em share_token quebra o boot.
+      await getSql().unsafe(DDL_MIGRATE);
     })();
   }
   await migrated;
