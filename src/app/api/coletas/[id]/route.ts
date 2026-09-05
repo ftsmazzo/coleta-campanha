@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { campaigns, collections, documentTypes, fieldAnswers } from "@/lib/db/schema";
 import { listFieldViews } from "@/lib/extract";
 import { nowDate } from "@/lib/paths";
+import { computeCollectionProgress } from "@/lib/progress";
+import type { DocumentSchema } from "@/lib/schema-types";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -24,23 +26,21 @@ export async function GET(_request: Request, { params }: Params) {
     .limit(1);
 
   const fields = await listFieldViews(id);
-  const filled = fields.filter((f) => f.status !== "vazio" && f.value != null && f.value !== "").length;
+  const schema = docType ? (JSON.parse(docType.schemaJson) as DocumentSchema) : { sections: [] };
+  const progress = computeCollectionProgress(schema, fields);
 
   return NextResponse.json({
     collection: {
       ...collection,
       audioParts: collection.audioPartsJson ? JSON.parse(collection.audioPartsJson) : null,
+      hasAudio: Boolean(collection.audioPath),
     },
     campaign,
     documentType: docType
       ? { ...docType, schema: JSON.parse(docType.schemaJson) }
       : null,
     fields,
-    progress: {
-      total: fields.length,
-      filled,
-      percent: fields.length ? Math.round((filled / fields.length) * 100) : 0,
-    },
+    progress,
   });
 }
 

@@ -55,6 +55,7 @@ export default async function ColetaPage({ params }: Props) {
         schema={schema}
         audioParts={audioParts}
         status={collection.status}
+        hasAudio={Boolean(collection.audioPath)}
       />
     </div>
   );

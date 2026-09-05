@@ -14,6 +14,7 @@ type Props = {
   schema: DocumentSchema;
   audioParts: { chunked?: boolean; partCount?: number; durationSeconds?: number | null } | null;
   status: string;
+  hasAudio?: boolean;
 };
 
 type Mode = "formulario" | "gravar" | "importar";
@@ -25,6 +26,7 @@ export function CollectionWorkspace({
   schema,
   audioParts,
   status: initialStatus,
+  hasAudio: initialHasAudio = false,
 }: Props) {
   const [transcript, setTranscript] = useState(initialTranscript ?? "");
   const [fields, setFields] = useState(initialFields);
@@ -33,6 +35,7 @@ export function CollectionWorkspace({
   const [message, setMessage] = useState<string | null>(null);
   const [status, setStatus] = useState(initialStatus);
   const [audioInfo, setAudioInfo] = useState(audioParts);
+  const [hasAudio, setHasAudio] = useState(initialHasAudio);
   const [mode, setMode] = useState<Mode>("formulario");
   const [recordingFile, setRecordingFile] = useState<File | null>(null);
   const [filterGaps, setFilterGaps] = useState(false);
@@ -111,13 +114,13 @@ export function CollectionWorkspace({
 
   async function uploadAudio(file: File) {
     setPending(true);
-    setMessage(null);
+    setMessage("Enviando áudio, transcrevendo e extraindo com IA…");
     const fd = new FormData();
     fd.set("file", file);
     const res = await fetch(`/api/coletas/${collectionId}/audio`, { method: "POST", body: fd });
     const data = await res.json();
-    setPending(false);
     if (!res.ok) {
+      setPending(false);
       setMessage(data.error || "Falha no áudio");
       return;
     }
@@ -126,9 +129,45 @@ export function CollectionWorkspace({
       partCount: data.partCount,
       durationSeconds: data.durationSeconds,
     });
-    setStatus("audio_pronto");
-    setMessage(data.note || "Áudio preparado. Cole a transcrição ou rode a IA quando tiver o texto.");
+    setHasAudio(true);
+    if (typeof data.transcript === "string") setTranscript(data.transcript);
+    setStatus("revisao");
     setRecordingFile(null);
+
+    const refreshed = await fetch(`/api/coletas/${collectionId}`);
+    const full = await refreshed.json();
+    if (refreshed.ok) {
+      setFields(full.fields);
+      setStatus(full.collection.status);
+      if (full.collection.transcript) setTranscript(full.collection.transcript);
+    }
+
+    setPending(false);
+    setMessage(data.note || "Áudio processado.");
+    setMode("formulario");
+  }
+
+  async function retranscribe() {
+    setPending(true);
+    setMessage("Transcrevendo áudio salvo e extraindo lacunas…");
+    const res = await fetch(`/api/coletas/${collectionId}/transcribe`, { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) {
+      setPending(false);
+      setMessage(data.error || "Falha na transcrição");
+      return;
+    }
+    if (typeof data.transcript === "string") setTranscript(data.transcript);
+    const refreshed = await fetch(`/api/coletas/${collectionId}`);
+    const full = await refreshed.json();
+    if (refreshed.ok) {
+      setFields(full.fields);
+      setStatus(full.collection.status);
+      if (full.collection.transcript) setTranscript(full.collection.transcript);
+    }
+    setPending(false);
+    setMessage(data.note || "Transcrição concluída.");
+    setMode("formulario");
   }
 
   async function runExtract(opts?: { onlyEmpty?: boolean }) {
@@ -196,17 +235,18 @@ export function CollectionWorkspace({
             <div className="progress-ring-inner">
               <strong>{percent}%</strong>
               <span>
-                {filled}/{fields.length}
+                {filled}/{overall.total}
               </span>
             </div>
           </div>
           <div className="session-hero-copy">
             <div className="session-badges">
               <span className={status === "validado" ? "badge" : "badge badge-muted"}>{status}</span>
-              {audioInfo?.partCount ? (
+              {hasAudio || audioInfo?.partCount ? (
                 <span className="badge badge-warn">
-                  áudio · {audioInfo.partCount} parte(s)
-                  {audioInfo.chunked ? " · dividido" : ""}
+                  áudio
+                  {audioInfo?.partCount ? ` · ${audioInfo.partCount} parte(s)` : ""}
+                  {audioInfo?.chunked ? " · dividido" : ""}
                 </span>
               ) : null}
               <span className="badge badge-muted">{missing} lacunas</span>
@@ -272,10 +312,40 @@ export function CollectionWorkspace({
         </div>
       </section>
 
+      {hasAudio ? (
+        <section className="panel session-panel session-audio-saved">
+          <h3 className="display panel-title">Áudio desta sessão</h3>
+          <p className="panel-sub">
+            O arquivo continua na sessão. Ouça abaixo
+            {transcript.trim() ? " — a transcrição ficou em Importar / IA." : "."}
+          </p>
+          <audio
+            key={`${collectionId}-audio`}
+            controls
+            playsInline
+            preload="metadata"
+            src={`/api/coletas/${collectionId}/audio`}
+            className="recorder-audio"
+          />
+          <div className="session-hero-actions" style={{ marginTop: "0.75rem" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={pending}
+              onClick={() => void retranscribe()}
+            >
+              {pending ? "Processando…" : "Transcrever de novo + IA nas lacunas"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {mode === "gravar" ? (
         <section className="panel session-panel">
           <h3 className="display panel-title">Gravação na plataforma</h3>
-          <p className="panel-sub">Mesmo fluxo do Orbe: grave aqui, sem precisar de arquivo externo.</p>
+          <p className="panel-sub">
+            Grave → envie. O sistema transcreve (Whisper) e tenta preencher lacunas com IA automaticamente.
+          </p>
           <SessionRecorder onRecordingReady={setRecordingFile} disabled={pending} />
           {recordingFile ? (
             <div className="recorder-send">
@@ -285,7 +355,7 @@ export function CollectionWorkspace({
                 disabled={pending}
                 onClick={() => void uploadAudio(recordingFile)}
               >
-                {pending ? "Enviando…" : "Enviar gravação para a sessão"}
+                {pending ? "Transcrevendo e extraindo…" : "Enviar gravação (STT + IA)"}
               </button>
             </div>
           ) : null}
