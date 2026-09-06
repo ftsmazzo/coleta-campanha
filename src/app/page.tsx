@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 import { startOnboardingCollection } from "@/app/actions";
@@ -18,14 +19,22 @@ export default async function HomePage() {
 
   return (
     <div className="rise" style={{ display: "grid", gap: "1.5rem", maxWidth: 980 }}>
-      <header style={{ display: "grid", gap: "0.65rem" }}>
-        <p className="badge">Coleta Campanha</p>
-        <h1 className="display" style={{ margin: 0, fontSize: "clamp(2rem, 4vw, 3rem)", letterSpacing: "-0.03em" }}>
+      <header className="home-hero">
+        <Image
+          src="/brand/logo-horizontal.png"
+          alt="Inteligência Eleitoral"
+          width={220}
+          height={64}
+          className="home-hero-logo"
+          priority
+        />
+        <p className="home-kicker">Coleta Campanha</p>
+        <h1 className="display" style={{ margin: 0, fontSize: "clamp(1.85rem, 4vw, 2.75rem)", letterSpacing: "-0.03em" }}>
           Sessões operacionais com formulário, gravação e IA.
         </h1>
-        <p style={{ margin: 0, maxWidth: 640, color: "var(--ink-soft)", lineHeight: 1.55 }}>
-          Cada sessão é um checklist vivo: preencha à mão, grave áudio na plataforma ou importe texto. A barra mostra o
-          que já temos e o que ainda falta.
+        <p style={{ margin: "0.75rem 0 0", maxWidth: 560, color: "var(--ink-soft)", lineHeight: 1.55 }}>
+          Cada sessão é um checklist vivo: preencha à mão, grave áudio ou importe texto. Acompanhe o que já temos e o
+          que ainda falta.
         </p>
       </header>
 

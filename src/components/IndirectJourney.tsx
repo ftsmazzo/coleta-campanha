@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CLASSIFICACAO_OPERACAO } from "@/lib/municipios";
 import type { JourneyStep } from "@/lib/share";
@@ -13,6 +14,21 @@ function formatMs(ms: number) {
   const m = String(Math.floor(total / 60)).padStart(2, "0");
   const s = String(total % 60).padStart(2, "0");
   return `${m}:${s}`;
+}
+
+function BrandBar({ modeLabel }: { modeLabel: string }) {
+  return (
+    <div className="journey-brand-bar">
+      <Image
+        src="/brand/logo-horizontal.png"
+        alt="Inteligência Eleitoral"
+        width={180}
+        height={48}
+        priority
+      />
+      <span className="journey-brand-chip">{modeLabel}</span>
+    </div>
+  );
 }
 
 export function IndirectJourney({ token }: Props) {
@@ -36,6 +52,7 @@ export function IndirectJourney({ token }: Props) {
   const [skippedIds, setSkippedIds] = useState<string[]>([]);
 
   const storageKey = `coleta-r:${token}`;
+  const chipRailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     try {
@@ -99,6 +116,7 @@ export function IndirectJourney({ token }: Props) {
   const onlySkippedLeft =
     !loading && !closed && !error && introDone && openSteps.length === 0 && steps.length > 0;
   const totalOpen = openSteps.length;
+  const modeLabel = shareMode === "escolha" ? "modo coluna" : "modo jornada";
 
   useEffect(() => {
     if (shareMode !== "escolha") return;
@@ -108,6 +126,11 @@ export function IndirectJourney({ token }: Props) {
     else if (pickedId && !first) setPickedId(null);
   }, [shareMode, openStepIds, pickedId]);
 
+  useEffect(() => {
+    if (!pickedId || !chipRailRef.current) return;
+    const el = chipRailRef.current.querySelector<HTMLElement>(`[data-chip-id="${pickedId}"]`);
+    el?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [pickedId]);
 
   function skipCurrent() {
     if (!step) return;
@@ -373,103 +396,150 @@ export function IndirectJourney({ token }: Props) {
   }
 
   if (loading) {
-    return <div className="journey-shell panel">Carregando jornada…</div>;
+    return (
+      <>
+        <BrandBar modeLabel="carregando" />
+        <div className="journey-shell">
+          <div className="journey-card panel">Carregando jornada…</div>
+        </div>
+      </>
+    );
   }
 
   if (error && !step && !allCaughtUp && !onlySkippedLeft && introDone) {
     return (
-      <div className="journey-shell panel">
-        <h1 className="display journey-title">Link indisponível</h1>
-        <p>{error}</p>
-      </div>
+      <>
+        <BrandBar modeLabel="indisponível" />
+        <div className="journey-shell">
+          <div className="journey-card panel">
+            <h1 className="display journey-title">Link indisponível</h1>
+            <p className="journey-hint">{error}</p>
+          </div>
+        </div>
+      </>
     );
   }
 
   if (closed) {
     return (
-      <div className="journey-shell panel">
-        <p className="badge">encerrado</p>
-        <h1 className="display journey-title">{title || "Onboarding"}</h1>
-        <p>{closedMsg}</p>
-      </div>
+      <>
+        <BrandBar modeLabel="encerrado" />
+        <div className="journey-shell">
+          <div className="journey-card panel journey-done">
+            <p className="badge">encerrado</p>
+            <h1 className="display journey-title">{title || "Onboarding"}</h1>
+            <p className="journey-hint">{closedMsg}</p>
+          </div>
+        </div>
+      </>
     );
   }
 
   if (!introDone && !loading && !error) {
     return (
-      <div className="journey-shell">
-        <header className="journey-top">
-          <p className="badge badge-muted">começar</p>
-          <h1 className="display journey-title">{linkTitle || title}</h1>
-          {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
-        </header>
-        <article className="journey-card panel">
-          <h2 className="display journey-question">Antes de começar</h2>
-          <p className="journey-hint">
-            Seu nome aparece só uma vez. Nas perguntas você pode responder ou pular o que não for com você. O que
-            outra pessoa já preencheu fica fechado para todos.
-          </p>
-          <div className="field">
-            <label htmlFor="who">Seu nome</label>
-            <input
-              id="who"
-              value={respondentName}
-              onChange={(e) => setRespondentName(e.target.value)}
-              placeholder="Ex.: Ana — comunicação"
-              autoFocus
-            />
+      <>
+        <BrandBar modeLabel={modeLabel} />
+        <div className="journey-shell">
+          <div className="journey-intro-hero">
+            <div className="journey-intro-hero-inner">
+              <Image
+                src="/brand/logo-horizontal.png"
+                alt="Inteligência Eleitoral"
+                width={160}
+                height={44}
+              />
+              <p className="badge badge-muted">começar</p>
+              <h1 className="display journey-title">{linkTitle || title}</h1>
+              {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
+            </div>
           </div>
-          <div className="journey-actions journey-send">
-            <button type="button" className="btn btn-primary btn-lg" onClick={startIntro}>
-              Continuar
-            </button>
-          </div>
-        </article>
-      </div>
+          <article className="journey-card panel">
+            <h2 className="display journey-question">Antes de começar</h2>
+            <p className="journey-hint">
+              Seu nome aparece só uma vez. Nas perguntas você pode responder ou pular o que não for com você. O que
+              outra pessoa já preencheu fica fechado para todos.
+            </p>
+            <div className="field">
+              <label htmlFor="who">Seu nome</label>
+              <input
+                id="who"
+                value={respondentName}
+                onChange={(e) => setRespondentName(e.target.value)}
+                placeholder="Ex.: Ana — comunicação"
+                autoFocus
+                autoComplete="name"
+              />
+            </div>
+            <div className="journey-actions journey-send">
+              <button type="button" className="btn btn-primary btn-lg" onClick={startIntro}>
+                Continuar
+              </button>
+            </div>
+          </article>
+        </div>
+      </>
     );
   }
 
   if (allCaughtUp) {
     return (
-      <div className="journey-shell panel journey-done">
-        <p className="badge">obrigado</p>
-        <h1 className="display journey-title">Pronto por aqui</h1>
-        <p>Não há mais perguntas abertas neste link. O que já foi respondido ficou fechado para todos.</p>
-        {progress ? (
-          <p className="journey-meta">
-            Sessão: {progress.filled}/{progress.total} · {progress.percent}%
-          </p>
-        ) : null}
-      </div>
+      <>
+        <BrandBar modeLabel="concluído" />
+        <div className="journey-shell">
+          <div className="journey-card panel journey-done">
+            <p className="badge">obrigado</p>
+            <h1 className="display journey-title">Pronto por aqui</h1>
+            <p className="journey-hint">
+              Não há mais perguntas abertas neste link. O que já foi respondido ficou fechado para todos.
+            </p>
+            {progress ? (
+              <p className="journey-meta">
+                Sessão: {progress.filled}/{progress.total} · {progress.percent}%
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </>
     );
   }
 
   if (onlySkippedLeft) {
     return (
-      <div className="journey-shell panel journey-done">
-        <p className="badge">quase</p>
-        <h1 className="display journey-title">Você pulou o restante</h1>
-        <p>
-          As perguntas que você pulou continuam abertas para outras pessoas. Se quiser, pode revisitar as puladas.
-        </p>
-        <div className="journey-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => {
-              setSkippedIds([]);
-              persistSession({ skipped: [] });
-            }}
-          >
-            Ver perguntas que pulei
-          </button>
+      <>
+        <BrandBar modeLabel={modeLabel} />
+        <div className="journey-shell">
+          <div className="journey-card panel journey-done">
+            <p className="badge badge-warn">quase</p>
+            <h1 className="display journey-title">Você pulou o restante</h1>
+            <p className="journey-hint">
+              As perguntas que você pulou continuam abertas para outras pessoas. Se quiser, pode revisitar as puladas.
+            </p>
+            <div className="journey-actions">
+              <button
+                type="button"
+                className="btn btn-primary btn-lg"
+                onClick={() => {
+                  setSkippedIds([]);
+                  persistSession({ skipped: [] });
+                }}
+              >
+                Ver perguntas que pulei
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
+  function pickStep(id: string) {
+    setPickedId(id);
+    resetAnswer();
+    setError(null);
+  }
+
   const questionCard = step ? (
-        <article className="journey-card panel">
+        <article className="journey-card panel" key={step.id}>
           <p className="journey-section">{step.sectionTitle}</p>
           <h2 className="display journey-question">{step.question}</h2>
 
@@ -517,7 +587,7 @@ export function IndirectJourney({ token }: Props) {
                     </div>
                     <div className="field">
                       <label>Telefone</label>
-                      <input value={respTel} onChange={(e) => setRespTel(e.target.value)} />
+                      <input value={respTel} onChange={(e) => setRespTel(e.target.value)} inputMode="tel" />
                     </div>
                     <div className="field">
                       <label>Coordenador</label>
@@ -525,7 +595,7 @@ export function IndirectJourney({ token }: Props) {
                     </div>
                     <div className="field">
                       <label>Telefone</label>
-                      <input value={coordTel} onChange={(e) => setCoordTel(e.target.value)} />
+                      <input value={coordTel} onChange={(e) => setCoordTel(e.target.value)} inputMode="tel" />
                     </div>
                   </div>
                   <div className="field">
@@ -564,6 +634,7 @@ export function IndirectJourney({ token }: Props) {
                     <input
                       value={contact.telefone}
                       onChange={(e) => setContact((c) => ({ ...c, telefone: e.target.value }))}
+                      inputMode="tel"
                     />
                   </div>
                   <div className="field">
@@ -595,11 +666,11 @@ export function IndirectJourney({ token }: Props) {
               <p className={`recorder-timer ${recording ? "is-live" : ""}`}>{formatMs(elapsedMs)}</p>
               <div className="journey-actions">
                 {!recording ? (
-                  <button type="button" className="btn btn-record" disabled={pending} onClick={() => void startRecording()}>
+                  <button type="button" className="btn btn-record btn-lg" disabled={pending} onClick={() => void startRecording()}>
                     {audioFile ? "Gravar de novo" : "Começar a gravar"}
                   </button>
                 ) : (
-                  <button type="button" className="btn btn-primary" onClick={stopRecording}>
+                  <button type="button" className="btn btn-mint btn-lg" onClick={stopRecording}>
                     Parar
                   </button>
                 )}
@@ -628,73 +699,91 @@ export function IndirectJourney({ token }: Props) {
 
           {error ? <p className="journey-error">{error}</p> : null}
 
-          <div className="journey-actions journey-send">
+          <div className="journey-sticky-actions">
             <button type="button" className="btn btn-primary btn-lg" disabled={pending} onClick={() => void send()}>
-              {pending ? "Enviando…" : "Enviar · próxima"}
+              {pending ? "Enviando…" : shareMode === "escolha" ? "Enviar resposta" : "Enviar · próxima"}
             </button>
             <button type="button" className="btn btn-secondary btn-lg" disabled={pending} onClick={skipCurrent}>
               Pular · não é comigo
             </button>
+            <p className="journey-hint">
+              Pular só tira da sua fila. A pergunta continua aberta para outra pessoa. Já respondidas ficam fechadas
+              para todos.
+            </p>
           </div>
-          <p className="journey-hint">
-            Pular só tira da sua fila. A pergunta continua aberta para outra pessoa. Já respondidas ficam fechadas
-            para todos.
-          </p>
         </article>
       ) : null;
 
   return (
-    <div className={`journey-shell ${showEscolhaLayout ? "journey-shell-split" : ""}`}>
-      <header className="journey-top">
-        <p className="badge badge-muted">
-          {shareMode === "escolha" ? "escolha a pergunta" : "jornada"}
-        </p>
-        <h1 className="display journey-title">{linkTitle || title}</h1>
-        {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
-        {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
-        {respondentName.trim() ? (
-          <p className="journey-meta">Respondendo como {respondentName.trim()}</p>
-        ) : null}
-        <div className="journey-bar">
-          <div className="mini-bar">
-            <i style={{ width: `${progress?.percent ?? 0}%` }} />
-          </div>
-          <span>
-            {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} pra você · sessão {progress?.percent ?? 0}%
-          </span>
-        </div>
-      </header>
-
-      {showEscolhaLayout ? (
-        <div className="journey-split">
-          <aside className="journey-sidebar panel">
-            <h2 className="journey-sidebar-title">Perguntas abertas</h2>
-            <p className="journey-hint">
-              Clique na lista para responder. Se não for com você, use Pular no painel.
-            </p>
-            <div className="journey-sidebar-list">
-              {openSteps.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  className={`share-pick-item ${pickedId === s.id ? "is-active" : ""}`}
-                  onClick={() => {
-                    setPickedId(s.id);
-                    resetAnswer();
-                    setError(null);
-                  }}
-                >
-                  <strong>{s.sectionTitle}</strong>
-                  <span>{s.question}</span>
-                </button>
-              ))}
+    <>
+      <BrandBar modeLabel={modeLabel} />
+      <div className={`journey-shell ${showEscolhaLayout ? "journey-shell-split" : ""}`}>
+        <header className="journey-top">
+          <p className="badge badge-muted">
+            {shareMode === "escolha" ? "escolha a pergunta" : "jornada"}
+          </p>
+          <h1 className="display journey-title">{linkTitle || title}</h1>
+          {linkTitle && linkTitle !== title ? <p className="journey-meta">{title}</p> : null}
+          {campaignName ? <p className="journey-meta">{campaignName}</p> : null}
+          {respondentName.trim() ? (
+            <p className="journey-meta">Respondendo como {respondentName.trim()}</p>
+          ) : null}
+          <div className="journey-bar">
+            <div className="mini-bar">
+              <i style={{ width: `${progress?.percent ?? 0}%` }} />
             </div>
-          </aside>
-          <div className="journey-main">{questionCard}</div>
-        </div>
-      ) : (
-        questionCard
-      )}
-    </div>
+            <span>
+              {totalOpen} pergunta{totalOpen === 1 ? "" : "s"} pra você · sessão {progress?.percent ?? 0}%
+            </span>
+          </div>
+        </header>
+
+        {showEscolhaLayout ? (
+          <div className="journey-split">
+            <aside className="journey-sidebar panel">
+              <h2 className="journey-sidebar-title">Perguntas abertas</h2>
+              <p className="journey-hint">
+                Toque na lista para responder. Se não for com você, use Pular no painel.
+              </p>
+              <div className="journey-sidebar-list">
+                {openSteps.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className={`share-pick-item ${pickedId === s.id ? "is-active" : ""}`}
+                    onClick={() => pickStep(s.id)}
+                  >
+                    <strong>{s.sectionTitle}</strong>
+                    <span>{s.question}</span>
+                  </button>
+                ))}
+              </div>
+            </aside>
+            <div className="journey-main">
+              <div className="journey-mobile-rail">
+                <p className="journey-mobile-rail-label">Deslize e escolha a pergunta</p>
+                <div className="journey-chips" ref={chipRailRef}>
+                  {openSteps.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      data-chip-id={s.id}
+                      className={`journey-chip ${pickedId === s.id ? "is-active" : ""}`}
+                      onClick={() => pickStep(s.id)}
+                    >
+                      <strong>{s.sectionTitle}</strong>
+                      <span>{s.question}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {questionCard}
+            </div>
+          </div>
+        ) : (
+          questionCard
+        )}
+      </div>
+    </>
   );
 }

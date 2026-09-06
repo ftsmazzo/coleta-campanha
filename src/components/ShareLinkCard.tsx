@@ -111,7 +111,7 @@ export function ShareLinkCard({ collectionId }: Props) {
       <h3 className="display panel-title">Links para a equipe</h3>
       <p className="panel-sub">
         Crie um link por situação. Escolha <strong>jornada</strong> (uma pergunta após a outra) ou{" "}
-        <strong>escolha</strong> (a pessoa vê a lista e responde o que quiser). Marque só as perguntas do recorte —
+        <strong>coluna</strong> (lista para a pessoa escolher o que responder). Marque só as perguntas do recorte —
         ou deixe vazio para todas as abertas. Já respondidas continuam bloqueadas.
       </p>
       {openCount != null ? (
@@ -136,14 +136,14 @@ export function ShareLinkCard({ collectionId }: Props) {
             className={`journey-mode ${mode === "jornada" ? "is-active" : ""}`}
             onClick={() => setMode("jornada")}
           >
-            Jornada (sequencial)
+            Jornada
           </button>
           <button
             type="button"
             className={`journey-mode ${mode === "escolha" ? "is-active" : ""}`}
             onClick={() => setMode("escolha")}
           >
-            Escolher perguntas
+            Coluna
           </button>
         </div>
 
@@ -193,7 +193,7 @@ export function ShareLinkCard({ collectionId }: Props) {
               <div>
                 <strong>{l.title}</strong>
                 <div className="journey-meta">
-                  {l.mode === "escolha" ? "modo escolha" : "modo jornada"}
+                  {l.mode === "escolha" ? "modo coluna" : "modo jornada"}
                   {l.scope.length ? ` · ${l.scope.length} pergunta(s) no recorte` : " · todas as abertas"}
                 </div>
                 <code className="share-url">{absoluteUrl(l.url)}</code>

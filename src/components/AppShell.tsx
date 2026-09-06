@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -26,8 +27,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <aside className="rail">
         <div className="brand">
-          <strong>Coleta</strong>
-          <span>Operação de campanha · módulo IE</span>
+          <Image
+            src="/brand/logo-horizontal.png"
+            alt="Inteligência Eleitoral"
+            width={188}
+            height={56}
+            className="brand-logo"
+            priority
+          />
+          <span>Coleta operacional de campanha</span>
         </div>
         <nav className="nav">
           {links.map((link) => {
@@ -39,9 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <p style={{ marginTop: "auto", fontSize: "0.75rem", color: "var(--ink-soft)", padding: "0 0.4rem" }}>
-          App isolado. Destino: Inteligência Eleitoral.
-        </p>
+        <p className="rail-foot">Módulo Coleta · Inteligência Eleitoral</p>
       </aside>
       <main className="main">{children}</main>
     </div>
