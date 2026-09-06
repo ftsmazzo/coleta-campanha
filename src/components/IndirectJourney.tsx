@@ -4,6 +4,12 @@ import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CLASSIFICACAO_OPERACAO } from "@/lib/municipios";
 import type { JourneyStep } from "@/lib/share";
+import {
+  formatBytes,
+  MAX_UPLOAD_FILE_BYTES,
+  MAX_UPLOAD_FILES,
+  validateUploadBatch,
+} from "@/lib/upload-limits";
 
 type Progress = { total: number; filled: number; percent: number; missing: number };
 type AnswerMode = "texto" | "audio" | "arquivo";
@@ -97,7 +103,8 @@ export function IndirectJourney({ token }: Props) {
   const [recording, setRecording] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [audioFile, setAudioFile] = useState<File | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -192,9 +199,10 @@ export function IndirectJourney({ token }: Props) {
     setCoordNome("");
     setCoordTel("");
     setAudioFile(null);
-    setFile(null);
+    setFiles([]);
     setRecording(false);
     setElapsedMs(0);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   async function startRecording() {
@@ -284,12 +292,31 @@ export function IndirectJourney({ token }: Props) {
       }
 
       if (mode === "arquivo") {
-        if (!file) {
-          setError("Escolha um arquivo.");
+        const check = validateUploadBatch(files);
+        if (!check.ok) {
+          setError(check.error);
           setPending(false);
           return;
         }
-        const note = text.trim() || `Arquivo enviado: ${file.name}`;
+        const names = files.map((f) => f.name).join(", ");
+        const note =
+          text.trim() ||
+          (files.length === 1 ? `Arquivo enviado: ${names}` : `${files.length} arquivos enviados: ${names}`);
+
+        // Anexa antes de fechar a pergunta — se o upload falhar, a pergunta continua aberta.
+        const fd = new FormData();
+        fd.set("kind", "documento");
+        fd.set("fieldAnswerId", step.fieldAnswerId);
+        for (const f of files) fd.append("file", f);
+        if (respondentName) fd.set("respondentName", respondentName);
+        const attachRes = await fetch(`/api/r/${token}/attach`, { method: "POST", body: fd });
+        const attachData = await attachRes.json().catch(() => ({}));
+        if (!attachRes.ok) {
+          setError(attachData.error || "Falha ao enviar os arquivos. Tente de novo.");
+          setPending(false);
+          return;
+        }
+
         const payload: Record<string, unknown> = {
           stepId: step.id,
           respondentName,
@@ -313,18 +340,14 @@ export function IndirectJourney({ token }: Props) {
         });
         const data = await res.json();
         if (!res.ok) {
-          setError(data.error || "Falha ao salvar");
+          setError(
+            data.error ||
+              "Arquivos enviados, mas a resposta não fechou. Tente enviar de novo (os arquivos já estão salvos).",
+          );
           if (res.status === 409) await load();
           setPending(false);
           return;
         }
-
-        const fd = new FormData();
-        fd.set("kind", "documento");
-        fd.set("fieldAnswerId", data.fieldAnswerId);
-        fd.set("file", file);
-        if (respondentName) fd.set("respondentName", respondentName);
-        await fetch(`/api/r/${token}/attach`, { method: "POST", body: fd });
 
         setSteps(data.steps || []);
         setProgress(data.progress || null);
@@ -538,6 +561,39 @@ export function IndirectJourney({ token }: Props) {
     setError(null);
   }
 
+  function addFiles(list: FileList | null) {
+    if (!list?.length) return;
+    const incoming = Array.from(list);
+    setFiles((prev) => {
+      const merged = [...prev];
+      for (const f of incoming) {
+        const dup = merged.some((x) => x.name === f.name && x.size === f.size && x.lastModified === f.lastModified);
+        if (!dup) merged.push(f);
+      }
+      if (merged.length > MAX_UPLOAD_FILES) {
+        setError(`No máximo ${MAX_UPLOAD_FILES} arquivos por envio.`);
+        return merged.slice(0, MAX_UPLOAD_FILES);
+      }
+      const check = validateUploadBatch(merged);
+      if (!check.ok) setError(check.error);
+      else setError(null);
+      return merged.slice(0, MAX_UPLOAD_FILES);
+    });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function removeFile(index: number) {
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      if (next.length) {
+        const check = validateUploadBatch(next);
+        if (!check.ok) setError(check.error);
+        else setError(null);
+      } else setError(null);
+      return next;
+    });
+  }
+
   const questionCard = step ? (
         <article className="journey-card panel" key={step.id}>
           <p className="journey-section">{step.sectionTitle}</p>
@@ -681,17 +737,47 @@ export function IndirectJourney({ token }: Props) {
 
           {mode === "arquivo" ? (
             <div className="journey-answer">
-              <p className="journey-hint">Envie um documento nesta pergunta (PDF, foto, planilha…).</p>
+              <p className="journey-hint">
+                Envie um ou vários documentos nesta pergunta (PDF, foto, planilha…). Até {MAX_UPLOAD_FILES} arquivos ·{" "}
+                {formatBytes(MAX_UPLOAD_FILE_BYTES)} cada.
+              </p>
               <div className="field">
-                <label>Arquivo</label>
-                <input type="file" disabled={pending} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                <label htmlFor="journey-files">Arquivos</label>
+                <input
+                  id="journey-files"
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  disabled={pending}
+                  onChange={(e) => addFiles(e.target.files)}
+                />
               </div>
+              {files.length > 0 ? (
+                <ul className="journey-file-list">
+                  {files.map((f, i) => (
+                    <li key={`${f.name}-${f.size}-${f.lastModified}-${i}`} className="journey-file-item">
+                      <span>
+                        <strong>{f.name}</strong>
+                        <em>{formatBytes(f.size)}</em>
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        disabled={pending}
+                        onClick={() => removeFile(i)}
+                      >
+                        Remover
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <div className="field">
                 <label>Nota opcional</label>
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Ex.: organograma enviado pelo Pedro"
+                  placeholder="Ex.: organogramas e atas do núcleo"
                 />
               </div>
             </div>
